@@ -4,6 +4,7 @@ import base64
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from enum import StrEnum
+import secrets
 
 from sqlalchemy import and_, update
 from sqlalchemy.exc import IntegrityError
@@ -17,6 +18,7 @@ from app.secret_code import create_secret_code_material, verify_secret_code
 class SecretState(StrEnum):
     ACTIVE = "active"
     USED = "used"
+    CANCELLED = "cancelled"
     EXPIRED = "expired"
     MISSING = "missing"
     CODE_REQUIRED = "code_required"
@@ -34,6 +36,13 @@ class RevealResult:
     plaintext: str | None = None
 
 
+@dataclass(frozen=True)
+class CancelResult:
+    """نتيجة داخلية لا تكشف سبب فشل إلغاء الرابط."""
+
+    cancelled: bool
+
+
 def utc_now() -> datetime:
     """يعيد الوقت الحالي بتوقيت UTC من دون معلومات منطقة لأن SQLite تختبره بهذه الصورة."""
 
@@ -49,6 +58,12 @@ def normalize_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc).replace(tzinfo=None)
 
 
+def generate_cancel_code() -> str:
+    """ينشئ رمز إلغاء عشوائيًا عالي العشوائية للمرسل فقط."""
+
+    return secrets.token_urlsafe(32)
+
+
 def create_secret(
     session: Session,
     *,
@@ -58,6 +73,7 @@ def create_secret(
     encryption_key: bytes,
     destroy_on_open: bool = False,
     secret_code: str | None = None,
+    cancel_code: str | None = None,
     now: datetime | None = None,
 ) -> Secret:
     """يشفّر النص ثم يحفظ ciphertext وnonce فقط في جدول الأسرار."""
@@ -71,6 +87,8 @@ def create_secret(
     nonce = generate_nonce()
     ciphertext = encrypt_text(plaintext, encryption_key, nonce)
     code_salt, code_hash = create_secret_code_material(secret_code) if secret_code else (None, None)
+    cancellation_value = cancel_code or generate_cancel_code()
+    cancel_salt, cancel_hash = create_secret_code_material(cancellation_value)
     secret = Secret(
         id=secret_id,
         ciphertext=base64.urlsafe_b64encode(ciphertext).decode("ascii"),
@@ -78,9 +96,12 @@ def create_secret(
         created_at=current_time,
         expires_at=normalized_expiry,
         used_at=None,
+        cancelled_at=None,
         destroy_on_open=destroy_on_open,
         secret_code_salt=code_salt,
         secret_code_hash=code_hash,
+        cancel_code_salt=cancel_salt,
+        cancel_code_hash=cancel_hash,
     )
 
     try:
@@ -104,6 +125,9 @@ def get_secret_state(
     secret = session.get(Secret, secret_id)
     if secret is None:
         return SecretState.MISSING, None
+
+    if secret.cancelled_at is not None:
+        return SecretState.CANCELLED, secret
 
     if secret.used_at is not None:
         return SecretState.USED, secret
@@ -155,6 +179,8 @@ def reveal_secret(
         session.commit()
 
     try:
+        if secret.ciphertext is None or secret.nonce is None:
+            raise ValueError("Encrypted secret payload is unavailable")
         ciphertext = base64.urlsafe_b64decode(secret.ciphertext.encode("ascii"))
         nonce = base64.urlsafe_b64decode(secret.nonce.encode("ascii"))
         plaintext = decrypt_text(ciphertext, encryption_key, nonce)
@@ -169,3 +195,53 @@ def reveal_secret(
         raise
 
     return RevealResult(state=SecretState.ACTIVE, plaintext=plaintext)
+
+
+def cancel_secret(
+    session: Session,
+    secret_id: str,
+    *,
+    cancel_code: str,
+    now: datetime | None = None,
+) -> CancelResult:
+    """يعطل رابطًا نشطًا ذريًا بعد التحقق من رمز الإلغاء المشتق."""
+
+    current_time = now or utc_now()
+    current_state, secret = get_secret_state(session, secret_id, now=current_time)
+    if (
+        current_state is not SecretState.ACTIVE
+        or secret is None
+        or secret.cancel_code_salt is None
+        or secret.cancel_code_hash is None
+    ):
+        return CancelResult(cancelled=False)
+
+    if not verify_secret_code(cancel_code, salt=secret.cancel_code_salt, expected_hash=secret.cancel_code_hash):
+        return CancelResult(cancelled=False)
+
+    update_result = session.execute(
+        update(Secret)
+        .where(
+            and_(
+                Secret.id == secret_id,
+                Secret.used_at.is_(None),
+                Secret.cancelled_at.is_(None),
+                Secret.expires_at > current_time,
+            )
+        )
+        .values(
+            cancelled_at=current_time,
+            ciphertext=None,
+            nonce=None,
+            secret_code_salt=None,
+            secret_code_hash=None,
+            cancel_code_salt=None,
+            cancel_code_hash=None,
+        )
+    )
+    if update_result.rowcount != 1:
+        session.rollback()
+        return CancelResult(cancelled=False)
+
+    session.commit()
+    return CancelResult(cancelled=True)

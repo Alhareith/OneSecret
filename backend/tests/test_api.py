@@ -261,3 +261,128 @@ def test_reveal_response_has_no_store_and_browser_protection_headers(client: Tes
     response = client.post(f"/api/secrets/{identifier}/reveal")
     assert response.status_code == 200
     assert_sensitive_response_headers(response)
+
+
+def test_create_returns_cancel_code_once_and_stores_only_derived_material(client: TestClient) -> None:
+    identifier = secret_id(31)
+    response = client.post("/api/secrets", json=create_payload(identifier))
+
+    assert response.status_code == 201
+    assert_sensitive_response_headers(response)
+    body = response.json()
+    cancel_code = body["cancel_code"]
+    assert 32 <= len(cancel_code) <= 64
+    assert "plaintext" not in body
+    assert "secret_code" not in body
+
+    session = app.state.session_factory()
+    try:
+        secret = session.get(Secret, identifier)
+        assert secret is not None
+        assert secret.cancel_code_salt
+        assert secret.cancel_code_hash
+        assert cancel_code not in secret.cancel_code_salt
+        assert cancel_code not in secret.cancel_code_hash
+    finally:
+        session.close()
+
+
+def test_correct_cancel_code_disables_secret_and_hides_cancelled_state(client: TestClient) -> None:
+    identifier = secret_id(32)
+    created = client.post("/api/secrets", json=create_payload(identifier, plaintext="CANCELLED-SECRET-MARKER"))
+    cancel_code = created.json()["cancel_code"]
+
+    cancelled = client.post(f"/api/secrets/{identifier}/cancel", json={"cancel_code": cancel_code})
+    reveal = client.post(f"/api/secrets/{identifier}/reveal")
+    status_response = client.get(f"/api/secrets/{identifier}/status")
+
+    assert cancelled.status_code == 200
+    assert cancelled.json() == {"id": identifier, "status": "cancelled"}
+    assert_sensitive_response_headers(cancelled)
+    assert "CANCELLED-SECRET-MARKER" not in cancelled.text
+    assert reveal.status_code == 410
+    assert reveal.json() == {"detail": "Secret is unavailable"}
+    assert_sensitive_response_headers(reveal)
+    assert status_response.json() == {"id": identifier, "status": "missing", "expires_at": None}
+    assert_sensitive_response_headers(status_response)
+
+    session = app.state.session_factory()
+    try:
+        secret = session.get(Secret, identifier)
+        assert secret is not None
+        assert secret.cancelled_at is not None
+        assert secret.ciphertext is None
+        assert secret.nonce is None
+        assert secret.cancel_code_salt is None
+        assert secret.cancel_code_hash is None
+    finally:
+        session.close()
+
+
+def test_wrong_cancel_code_is_generic_and_does_not_disable_secret(client: TestClient) -> None:
+    identifier = secret_id(33)
+    created = client.post("/api/secrets", json=create_payload(identifier, plaintext="available before valid cancellation"))
+    valid_code = created.json()["cancel_code"]
+    wrong_code = "WRONG-CANCEL-CODE-MUST-NOT-APPEAR-2026"
+
+    wrong = client.post(f"/api/secrets/{identifier}/cancel", json={"cancel_code": wrong_code})
+    reveal = client.post(f"/api/secrets/{identifier}/reveal")
+    correct = client.post(f"/api/secrets/{identifier}/cancel", json={"cancel_code": valid_code})
+
+    assert wrong.status_code == 410
+    assert wrong.json() == {"detail": "Secret is unavailable"}
+    assert_sensitive_response_headers(wrong)
+    assert wrong_code not in wrong.text
+    assert reveal.status_code == 200
+    assert reveal.json()["plaintext"] == "available before valid cancellation"
+    assert correct.status_code == 200
+
+
+def test_cancel_rejects_missing_expired_and_invalid_code_without_reflection(client: TestClient) -> None:
+    identifier = secret_id(34)
+    marker = "CANCEL-CODE-MUST-NOT-BE-REFLECTED-2026"
+
+    missing = client.post(f"/api/secrets/{identifier}/cancel", json={"cancel_code": marker})
+    assert missing.status_code == 410
+    assert missing.json() == {"detail": "Secret is unavailable"}
+    assert marker not in missing.text
+
+    created = client.post("/api/secrets", json=create_payload(identifier))
+    session = app.state.session_factory()
+    try:
+        secret = session.get(Secret, identifier)
+        assert secret is not None
+        secret.expires_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=1)
+        session.commit()
+    finally:
+        session.close()
+
+    expired = client.post(f"/api/secrets/{identifier}/cancel", json={"cancel_code": created.json()["cancel_code"]})
+    invalid = client.post(f"/api/secrets/{secret_id(35)}/cancel", json={"cancel_code": marker + ("x" * 100)})
+    assert expired.status_code == 410
+    assert_sensitive_response_headers(expired)
+    assert invalid.status_code == 422
+    assert invalid.json() == {"detail": "Invalid request"}
+    assert marker not in invalid.text
+
+
+def test_failed_cancel_code_attempts_are_limited_per_secret_without_logging_codes(client: TestClient, caplog: pytest.LogCaptureFixture) -> None:
+    protected_id = secret_id(36)
+    other_id = secret_id(37)
+    marker = "CANCEL-CODE-MUST-NOT-APPEAR-IN-LOGS-2026"
+    protected = client.post("/api/secrets", json=create_payload(protected_id))
+    other = client.post("/api/secrets", json=create_payload(other_id))
+
+    for _ in range(5):
+        wrong = client.post(f"/api/secrets/{protected_id}/cancel", json={"cancel_code": marker})
+        assert wrong.status_code == 410
+
+    blocked = client.post(f"/api/secrets/{protected_id}/cancel", json={"cancel_code": protected.json()["cancel_code"]})
+    other_cancel = client.post(f"/api/secrets/{other_id}/cancel", json={"cancel_code": other.json()["cancel_code"]})
+
+    assert blocked.status_code == 429
+    assert int(blocked.headers["Retry-After"]) > 0
+    assert_sensitive_response_headers(blocked)
+    assert marker not in caplog.text
+    assert protected.json()["cancel_code"] not in caplog.text
+    assert other_cancel.status_code == 200

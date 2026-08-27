@@ -10,6 +10,7 @@ export type CreateSecretOutput = {
   id: string;
   expires_at: string;
   status: "active";
+  cancel_code: string;
 };
 
 export type SecretStatus = "active" | "used" | "expired" | "missing";
@@ -23,6 +24,11 @@ export type SecretStatusOutput = {
 export type RevealSecretOutput = {
   id: string;
   plaintext: string;
+};
+
+export type CancelSecretOutput = {
+  id: string;
+  status: "cancelled";
 };
 
 export class ApiError extends Error {
@@ -60,4 +66,15 @@ export async function revealSecret(secretId: string, secretCode?: string): Promi
   if (!response.ok) throw new ApiError(response.status, "REVEAL_SECRET_FAILED");
 
   return response.json() as Promise<RevealSecretOutput>;
+}
+
+export async function cancelSecret(secretId: string, cancelCode: string): Promise<CancelSecretOutput> {
+  const response = await fetch(`/api/secrets/${encodeURIComponent(secretId)}/cancel`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cancel_code: cancelCode }),
+  });
+  if (!response.ok) throw new ApiError(response.status, "CANCEL_SECRET_FAILED");
+
+  return response.json() as Promise<CancelSecretOutput>;
 }

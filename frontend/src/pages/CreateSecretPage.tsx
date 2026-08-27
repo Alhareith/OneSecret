@@ -24,6 +24,7 @@ export default function CreateSecretPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [shareUrl, setShareUrl] = useState("");
+  const [cancelCode, setCancelCode] = useState("");
   const [copyNotice, setCopyNotice] = useState("");
 
   const text = copy[language];
@@ -63,6 +64,7 @@ export default function CreateSecretPage() {
         ...(normalizedSecretCode ? { secret_code: normalizedSecretCode } : {}),
       });
       setShareUrl(`${window.location.origin}/s/${result.id}`);
+      setCancelCode(result.cancel_code);
       setMessage("");
       setSecretCode("");
       setDestroyOnOpen(false);
@@ -79,6 +81,15 @@ export default function CreateSecretPage() {
       setCopyNotice(text.copied);
     } catch {
       setCopyNotice(text.copyFailed);
+    }
+  }
+
+  async function copyCancelCode() {
+    try {
+      await navigator.clipboard.writeText(cancelCode);
+      setCopyNotice(text.cancelCodeCopied);
+    } catch {
+      setCopyNotice(text.cancelCodeCopyFailed);
     }
   }
 
@@ -212,6 +223,15 @@ export default function CreateSecretPage() {
                 <div className="mt-3 grid grid-cols-2 gap-3">
                   <button type="button" onClick={copyShareUrl} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700 transition hover:border-slate-500 hover:text-slate-900 active:scale-[0.99]">{text.copy}</button>
                   <button type="button" onClick={shareSecret} className="rounded-xl border border-slate-900 bg-slate-900 px-4 py-3 text-sm font-bold text-white transition hover:bg-slate-800 active:scale-[0.99]">{text.share}</button>
+                </div>
+                <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                  <h3 className="text-sm font-bold text-amber-950">{text.cancelCodeTitle}</h3>
+                  <p className="mt-1 text-xs leading-5 text-amber-800">{text.cancelCodeDescription}</p>
+                  <p dir="ltr" className="mt-3 overflow-hidden text-ellipsis whitespace-nowrap rounded-lg border border-amber-200 bg-white px-3 py-2.5 text-left text-sm font-semibold tracking-wide text-amber-950">{cancelCode}</p>
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <button type="button" onClick={copyCancelCode} className="rounded-xl border border-amber-300 bg-white px-4 py-3 text-sm font-bold text-amber-950 transition hover:border-amber-500 active:scale-[0.99]">{text.copyCancelCode}</button>
+                    <a href="/cancel" className="rounded-xl border border-amber-900 bg-amber-900 px-4 py-3 text-center text-sm font-bold text-white no-underline transition hover:bg-amber-950 active:scale-[0.99]">{text.cancelLinkAction}</a>
+                  </div>
                 </div>
                 {copyNotice && <p className="mt-3 text-center text-sm font-medium text-slate-600">{copyNotice}</p>}
               </div>

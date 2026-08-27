@@ -11,6 +11,7 @@ from app.database import Base, build_engine, build_session_factory
 from app.secrets_service import (
     DuplicateSecretIdError,
     SecretState,
+    cancel_secret,
     create_secret,
     get_secret_state,
     reveal_secret,
@@ -49,7 +50,10 @@ def test_create_secret_stores_only_encrypted_payload_and_is_active(session) -> N
     assert stored_secret.ciphertext != "رسالة لا تحفظ كنص واضح"
     assert stored_secret.nonce
     assert stored_secret.used_at is None
+    assert stored_secret.cancelled_at is None
     assert stored_secret.destroy_on_open is False
+    assert stored_secret.cancel_code_salt
+    assert stored_secret.cancel_code_hash
 
 
 def test_create_secret_rejects_expiration_in_the_past(session) -> None:
@@ -174,6 +178,93 @@ def test_secret_code_is_derived_and_required_without_consuming_repeatable_secret
     assert secret.used_at is None
 
 
+def test_cancel_secret_requires_derived_sender_code_and_clears_sensitive_material(session) -> None:
+    now = datetime(2026, 8, 25, 10, 0, 0)
+    key = generate_key()
+    cancel_code = "v1-cancel-code-visible-to-sender-only-2026"
+    secret = create_secret(
+        session,
+        secret_id="cancel-secret-identifier-01",
+        plaintext="رسالة يجب ألا تبقى بعد الإلغاء",
+        expires_at=(now + timedelta(minutes=5)).replace(tzinfo=timezone.utc),
+        encryption_key=key,
+        secret_code="secret-code-2026",
+        cancel_code=cancel_code,
+        now=now,
+    )
+
+    result = cancel_secret(session, secret.id, cancel_code=cancel_code, now=now)
+    state, stored_secret = get_secret_state(session, secret.id, now=now)
+
+    assert result.cancelled is True
+    assert state is SecretState.CANCELLED
+    assert stored_secret is not None
+    assert stored_secret.cancelled_at == now
+    assert stored_secret.ciphertext is None
+    assert stored_secret.nonce is None
+    assert stored_secret.secret_code_salt is None
+    assert stored_secret.secret_code_hash is None
+    assert stored_secret.cancel_code_salt is None
+    assert stored_secret.cancel_code_hash is None
+    assert reveal_secret(session, secret.id, encryption_key=key, now=now).state is SecretState.CANCELLED
+
+
+def test_cancel_secret_rejects_wrong_code_without_changing_active_secret(session) -> None:
+    now = datetime(2026, 8, 25, 10, 0, 0)
+    key = generate_key()
+    secret = create_secret(
+        session,
+        secret_id="wrong-cancel-secret-identifier-01",
+        plaintext="الرسالة تبقى متاحة قبل الإلغاء الصحيح",
+        expires_at=(now + timedelta(minutes=5)).replace(tzinfo=timezone.utc),
+        encryption_key=key,
+        cancel_code="correct-cancel-code-for-v1-2-2026",
+        now=now,
+    )
+
+    result = cancel_secret(session, secret.id, cancel_code="wrong-cancel-code-for-v1-2-2026", now=now)
+    state, stored_secret = get_secret_state(session, secret.id, now=now)
+
+    assert result.cancelled is False
+    assert state is SecretState.ACTIVE
+    assert stored_secret is not None
+    assert stored_secret.cancelled_at is None
+    assert reveal_secret(session, secret.id, encryption_key=key, now=now).plaintext == "الرسالة تبقى متاحة قبل الإلغاء الصحيح"
+
+
+def test_cancel_secret_allows_only_one_concurrent_success(tmp_path) -> None:
+    engine = build_engine(f"sqlite:///{tmp_path / 'concurrent-cancel.db'}")
+    Base.metadata.create_all(engine)
+    session_factory = build_session_factory(engine)
+    key = generate_key()
+    now = datetime(2026, 8, 25, 10, 0, 0)
+    cancel_code = "concurrent-cancel-code-for-v1-2-2026"
+
+    try:
+        with session_factory() as setup_session:
+            secret = create_secret(
+                setup_session,
+                secret_id="concurrent-cancel-identifier-01",
+                plaintext="cancel only once",
+                expires_at=(now + timedelta(minutes=5)).replace(tzinfo=timezone.utc),
+                encryption_key=key,
+                cancel_code=cancel_code,
+                now=now,
+            )
+            secret_id = secret.id
+
+        def cancel():
+            with session_factory() as worker_session:
+                return cancel_secret(worker_session, secret_id, cancel_code=cancel_code, now=now)
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            results = list(executor.map(lambda _: cancel(), range(5)))
+
+        assert sum(result.cancelled for result in results) == 1
+    finally:
+        engine.dispose()
+
+
 def test_reveal_rejects_expired_or_missing_secret(session) -> None:
     now = datetime(2026, 8, 25, 10, 0, 0)
     key = generate_key()
@@ -190,8 +281,11 @@ def test_reveal_rejects_expired_or_missing_secret(session) -> None:
     assert reveal_secret(session, "missing-reveal-identifier-01", encryption_key=key, now=now).state == SecretState.MISSING
 
 
-@pytest.mark.parametrize("corrupted_field", ["ciphertext", "nonce"])
-def test_corrupted_payload_is_invalidated_after_a_failed_reveal(session, corrupted_field: str) -> None:
+@pytest.mark.parametrize(
+    ("corrupted_field", "corrupted_value"),
+    [("ciphertext", "broken"), ("nonce", "broken"), ("ciphertext", None), ("nonce", None)],
+)
+def test_corrupted_payload_is_invalidated_after_a_failed_reveal(session, corrupted_field: str, corrupted_value: str | None) -> None:
     now = datetime(2026, 8, 25, 10, 0, 0)
     key = generate_key()
     secret = create_secret(
@@ -202,7 +296,7 @@ def test_corrupted_payload_is_invalidated_after_a_failed_reveal(session, corrupt
         encryption_key=key,
         now=now,
     )
-    setattr(secret, corrupted_field, "broken")
+    setattr(secret, corrupted_field, corrupted_value)
     session.commit()
 
     with pytest.raises((binascii.Error, InvalidTag, ValueError)):

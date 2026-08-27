@@ -16,8 +16,18 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings, load_encryption_key
 from app.database import Base, build_engine, build_session_factory
-from app.rate_limit import CREATE_SECRET_LIMIT, FAILED_CODE_LIMIT, REVEAL_LIMIT, RequestRateLimiter, RateLimit
+from app.rate_limit import (
+    CANCEL_LIMIT,
+    CREATE_SECRET_LIMIT,
+    FAILED_CANCEL_CODE_LIMIT,
+    FAILED_CODE_LIMIT,
+    REVEAL_LIMIT,
+    RequestRateLimiter,
+    RateLimit,
+)
 from app.schemas import (
+    CancelSecretRequest,
+    CancelSecretResponse,
     CreateSecretRequest,
     CreateSecretResponse,
     RevealSecretRequest,
@@ -28,7 +38,9 @@ from app.schemas import (
 from app.secrets_service import (
     DuplicateSecretIdError,
     SecretState,
+    cancel_secret,
     create_secret,
+    generate_cancel_code,
     get_secret_state,
     reveal_secret,
 )
@@ -79,7 +91,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="OneSecret API", version="1.1.1", lifespan=lifespan)
+app = FastAPI(title="OneSecret API", version="1.2.0", lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -94,7 +106,7 @@ async def apply_security_headers(request: Request, call_next):
     response.headers.setdefault("Permissions-Policy", "camera=(), geolocation=(), microphone=(), payment=(), usb=(), web-share=(self)")
 
     path = request.url.path
-    if path.startswith("/api/secrets/") or path.startswith("/s/"):
+    if path == "/api/secrets" or path.startswith("/api/secrets/") or path.startswith("/s/") or path == "/cancel":
         response.headers["Cache-Control"] = "no-store"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
@@ -193,6 +205,7 @@ def create_secret_endpoint(
     encryption_key: bytes = Depends(get_encryption_key),
 ) -> CreateSecretResponse:
     reject_when_rate_limited(request, scope="create", policy=CREATE_SECRET_LIMIT, consume=True)
+    cancel_code = generate_cancel_code()
     try:
         secret = create_secret(
             session,
@@ -202,13 +215,14 @@ def create_secret_endpoint(
             encryption_key=encryption_key,
             destroy_on_open=payload.destroy_on_open,
             secret_code=payload.secret_code,
+            cancel_code=cancel_code,
         )
     except DuplicateSecretIdError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Secret identifier is unavailable") from error
     except ValueError as error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Secret cannot be created") from error
 
-    return CreateSecretResponse(id=secret.id, expires_at=secret.expires_at)
+    return CreateSecretResponse(id=secret.id, expires_at=secret.expires_at, cancel_code=cancel_code)
 
 
 @app.get("/api/secrets/{secret_id}/status", response_model=SecretStatusResponse)
@@ -217,10 +231,11 @@ def get_secret_status_endpoint(
     session: Session = Depends(get_session),
 ) -> SecretStatusResponse:
     state, secret = get_secret_state(session, secret_id)
+    is_cancelled = state is SecretState.CANCELLED
     return SecretStatusResponse(
         id=secret_id,
-        status=state,
-        expires_at=secret.expires_at if secret else None,
+        status=SecretState.MISSING if is_cancelled else state,
+        expires_at=None if is_cancelled or secret is None else secret.expires_at,
     )
 
 
@@ -266,6 +281,33 @@ def reveal_secret_endpoint(
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="Secret is unavailable")
 
     return RevealSecretResponse(id=secret_id, plaintext=result.plaintext)
+
+
+@app.post("/api/secrets/{secret_id}/cancel", response_model=CancelSecretResponse)
+def cancel_secret_endpoint(
+    request: Request,
+    secret_id: SecretIdPath,
+    payload: CancelSecretRequest,
+    session: Session = Depends(get_session),
+) -> CancelSecretResponse:
+    reject_when_rate_limited(request, scope="cancel", policy=CANCEL_LIMIT, consume=True)
+    reject_when_rate_limited(
+        request,
+        scope=f"cancel-code:{secret_id}",
+        policy=FAILED_CANCEL_CODE_LIMIT,
+        consume=False,
+    )
+    result = cancel_secret(session, secret_id, cancel_code=payload.cancel_code)
+    if not result.cancelled:
+        reject_when_rate_limited(
+            request,
+            scope=f"cancel-code:{secret_id}",
+            policy=FAILED_CANCEL_CODE_LIMIT,
+            consume=True,
+        )
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="Secret is unavailable")
+
+    return CancelSecretResponse(id=secret_id)
 
 
 if FRONTEND_DIST_DIR.exists():

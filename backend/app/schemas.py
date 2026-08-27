@@ -39,6 +39,7 @@ class CreateSecretResponse(BaseModel):
     id: str
     expires_at: datetime
     status: Literal["active"] = "active"
+    cancel_code: str = Field(min_length=32, max_length=64)
 
 
 class SecretStatusResponse(BaseModel):
@@ -54,3 +55,12 @@ class RevealSecretResponse(BaseModel):
 
 class RevealSecretRequest(BaseModel):
     secret_code: str | None = Field(default=None, min_length=8, max_length=128)
+
+
+class CancelSecretRequest(BaseModel):
+    cancel_code: str = Field(min_length=32, max_length=64)
+
+
+class CancelSecretResponse(BaseModel):
+    id: str
+    status: Literal["cancelled"] = "cancelled"

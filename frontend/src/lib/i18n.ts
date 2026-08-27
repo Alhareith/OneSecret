@@ -50,6 +50,28 @@ type Copy = {
   secretCodeThrottled: string;
   unlock: string;
   unlocking: string;
+  cancelCodeTitle: string;
+  cancelCodeDescription: string;
+  copyCancelCode: string;
+  cancelCodeCopied: string;
+  cancelCodeCopyFailed: string;
+  cancelLinkAction: string;
+  cancelTitle: string;
+  cancelDescription: string;
+  cancelReferenceLabel: string;
+  cancelReferenceDescription: string;
+  cancelReferencePlaceholder: string;
+  cancelReferenceError: string;
+  cancelCodeLabel: string;
+  cancelCodePlaceholder: string;
+  cancelCodeRequired: string;
+  cancelAction: string;
+  cancelling: string;
+  cancelUnavailable: string;
+  cancelThrottled: string;
+  cancelSuccessTitle: string;
+  cancelSuccessDescription: string;
+  cancelBackToCreate: string;
 };
 
 export const copy: Record<Language, Copy> = {
@@ -103,6 +125,28 @@ export const copy: Record<Language, Copy> = {
     secretCodeThrottled: "تمت محاولات كثيرة. انتظر قليلًا ثم حاول مرة أخرى.",
     unlock: "فتح الرسالة",
     unlocking: "جارٍ الفتح…",
+    cancelCodeTitle: "رمز إلغاء الرابط",
+    cancelCodeDescription: "احفظه الآن في مكان آمن. يظهر هنا مرة واحدة فقط، ولا ترسله مع الرابط.",
+    copyCancelCode: "نسخ رمز الإلغاء",
+    cancelCodeCopied: "تم نسخ رمز الإلغاء.",
+    cancelCodeCopyFailed: "انسخ رمز الإلغاء يدويًا واحفظه في مكان آمن.",
+    cancelLinkAction: "إلغاء رابط لاحقًا",
+    cancelTitle: "إلغاء رابط رسالة",
+    cancelDescription: "ألصق الرابط وأدخل رمز الإلغاء الذي حفظته.",
+    cancelReferenceLabel: "رابط الرسالة أو معرّفها",
+    cancelReferenceDescription: "يُستخرج المعرّف داخل المتصفح قبل إرسال طلب الإلغاء.",
+    cancelReferencePlaceholder: "https://…/s/…",
+    cancelReferenceError: "أدخل رابط رسالة صحيحًا أو معرّفًا صالحًا.",
+    cancelCodeLabel: "رمز الإلغاء",
+    cancelCodePlaceholder: "الرمز الذي ظهر عند إنشاء الرابط",
+    cancelCodeRequired: "أدخل رمز الإلغاء كاملًا.",
+    cancelAction: "إلغاء الرابط",
+    cancelling: "جارٍ إلغاء الرابط…",
+    cancelUnavailable: "تعذر إلغاء هذا الرابط. تحقق من البيانات ثم حاول مرة أخرى.",
+    cancelThrottled: "تمت محاولات كثيرة. انتظر قليلًا ثم حاول مرة أخرى.",
+    cancelSuccessTitle: "تم إلغاء الرابط",
+    cancelSuccessDescription: "لن يعود الرابط متاحًا لفتح الرسالة.",
+    cancelBackToCreate: "إنشاء رسالة جديدة",
   },
   en: {
     appName: "OneSecret",
@@ -154,5 +198,27 @@ export const copy: Record<Language, Copy> = {
     secretCodeThrottled: "Too many attempts. Please wait and try again.",
     unlock: "Open message",
     unlocking: "Opening…",
+    cancelCodeTitle: "Link cancellation code",
+    cancelCodeDescription: "Save it somewhere safe now. It is shown here only once; do not send it with the link.",
+    copyCancelCode: "Copy cancellation code",
+    cancelCodeCopied: "Cancellation code copied.",
+    cancelCodeCopyFailed: "Copy the cancellation code manually and keep it somewhere safe.",
+    cancelLinkAction: "Cancel a link later",
+    cancelTitle: "Cancel a message link",
+    cancelDescription: "Paste the link and enter the cancellation code you saved.",
+    cancelReferenceLabel: "Message link or identifier",
+    cancelReferenceDescription: "The identifier is extracted in this browser before the cancellation request is sent.",
+    cancelReferencePlaceholder: "https://…/s/…",
+    cancelReferenceError: "Enter a valid message link or identifier.",
+    cancelCodeLabel: "Cancellation code",
+    cancelCodePlaceholder: "The code shown when the link was created",
+    cancelCodeRequired: "Enter the complete cancellation code.",
+    cancelAction: "Cancel link",
+    cancelling: "Cancelling link…",
+    cancelUnavailable: "This link could not be cancelled. Check the details and try again.",
+    cancelThrottled: "Too many attempts. Please wait and try again.",
+    cancelSuccessTitle: "Link cancelled",
+    cancelSuccessDescription: "The link can no longer open the message.",
+    cancelBackToCreate: "Create a new message",
   },
 };

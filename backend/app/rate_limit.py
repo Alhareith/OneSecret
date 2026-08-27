@@ -26,7 +26,15 @@ class RateLimit:
 CREATE_SECRET_LIMIT = RateLimit(maximum=6, window_seconds=10 * 60)
 REVEAL_LIMIT = RateLimit(maximum=60, window_seconds=60)
 FAILED_CODE_LIMIT = RateLimit(maximum=5, window_seconds=10 * 60)
-MAX_WINDOW_SECONDS = max(CREATE_SECRET_LIMIT.window_seconds, REVEAL_LIMIT.window_seconds, FAILED_CODE_LIMIT.window_seconds)
+CANCEL_LIMIT = RateLimit(maximum=60, window_seconds=60)
+FAILED_CANCEL_CODE_LIMIT = RateLimit(maximum=5, window_seconds=10 * 60)
+MAX_WINDOW_SECONDS = max(
+    CREATE_SECRET_LIMIT.window_seconds,
+    REVEAL_LIMIT.window_seconds,
+    FAILED_CODE_LIMIT.window_seconds,
+    CANCEL_LIMIT.window_seconds,
+    FAILED_CANCEL_CODE_LIMIT.window_seconds,
+)
 CLEANUP_INTERVAL_SECONDS = 60
 
 
