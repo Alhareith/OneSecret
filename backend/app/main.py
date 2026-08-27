@@ -1,6 +1,7 @@
 """نقطة تشغيل FastAPI. لا تحتوي هذه المرحلة على مسارات للرسائل."""
 
 import binascii
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path as FilePath
@@ -15,6 +16,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings, load_encryption_key
 from app.database import Base, build_engine, build_session_factory
+from app.rate_limit import CREATE_SECRET_LIMIT, FAILED_CODE_LIMIT, REVEAL_LIMIT, RequestRateLimiter, RateLimit
 from app.schemas import (
     CreateSecretRequest,
     CreateSecretResponse,
@@ -37,6 +39,7 @@ SecretIdPath = Annotated[
 ]
 PROJECT_ROOT = FilePath(__file__).resolve().parents[2]
 FRONTEND_DIST_DIR = PROJECT_ROOT / "frontend" / "dist"
+SECURITY_LOGGER = logging.getLogger("onesecret.security")
 
 
 def configure_runtime(*, database_url: str, encryption_key: bytes) -> None:
@@ -49,6 +52,7 @@ def configure_runtime(*, database_url: str, encryption_key: bytes) -> None:
     Base.metadata.create_all(engine)
     app.state.session_factory = build_session_factory(engine)
     app.state.encryption_key = encryption_key
+    app.state.rate_limiter = RequestRateLimiter()
 
 
 def configure_runtime_from_environment() -> None:
@@ -75,7 +79,27 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="OneSecret API", version="0.0.1", lifespan=lifespan)
+app = FastAPI(title="OneSecret API", version="1.1.0", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def apply_security_headers(request: Request, call_next):
+    """يضيف رؤوس متصفح آمنة من دون حجب Web Share على الهاتف."""
+
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Content-Security-Policy", "frame-ancestors 'none'; base-uri 'self'")
+    response.headers.setdefault("Permissions-Policy", "camera=(), geolocation=(), microphone=(), payment=(), usb=(), web-share=(self)")
+
+    path = request.url.path
+    if path.startswith("/api/secrets/") or path.startswith("/s/"):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+
+    return response
 
 
 @app.exception_handler(RequestValidationError)
@@ -110,6 +134,47 @@ def get_encryption_key(request: Request) -> bytes:
     return encryption_key
 
 
+def get_client_source(request: Request) -> str:
+    """يعيد مصدر الاتصال كما يراه الخادم، من دون الثقة برؤوس عميل قابلة للتزوير."""
+
+    return request.client.host if request.client is not None else "unknown"
+
+
+def get_rate_limiter(request: Request) -> RequestRateLimiter:
+    limiter: RequestRateLimiter | None = getattr(request.app.state, "rate_limiter", None)
+    if limiter is None:
+        raise RuntimeError("OneSecret API is not configured")
+
+    return limiter
+
+
+def reject_when_rate_limited(
+    request: Request,
+    *,
+    scope: str,
+    policy: RateLimit,
+    consume: bool,
+) -> None:
+    """يفرض حدًا ويرسل سجلًا مجردًا من أي بيانات سرية عند الحجب."""
+
+    limiter = get_rate_limiter(request)
+    source = get_client_source(request)
+    retry_after = (
+        limiter.consume(scope=scope, source=source, policy=policy)
+        if consume
+        else limiter.retry_after(scope=scope, source=source, policy=policy)
+    )
+    if retry_after is None:
+        return
+
+    SECURITY_LOGGER.warning("security_event operation=%s outcome=rate_limited", scope.split(":", maxsplit=1)[0])
+    raise HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail="Too many requests. Try again later.",
+        headers={"Retry-After": str(retry_after)},
+    )
+
+
 @app.get("/api/health", include_in_schema=False)
 def health_check(request: Request) -> dict[str, str]:
     """يعيد حالة عامة فقط بعد نجاح تهيئة قاعدة البيانات ومفتاح التشفير."""
@@ -122,10 +187,12 @@ def health_check(request: Request) -> dict[str, str]:
 
 @app.post("/api/secrets", response_model=CreateSecretResponse, status_code=status.HTTP_201_CREATED)
 def create_secret_endpoint(
+    request: Request,
     payload: CreateSecretRequest,
     session: Session = Depends(get_session),
     encryption_key: bytes = Depends(get_encryption_key),
 ) -> CreateSecretResponse:
+    reject_when_rate_limited(request, scope="create", policy=CREATE_SECRET_LIMIT, consume=True)
     try:
         secret = create_secret(
             session,
@@ -159,11 +226,22 @@ def get_secret_status_endpoint(
 
 @app.post("/api/secrets/{secret_id}/reveal", response_model=RevealSecretResponse)
 def reveal_secret_endpoint(
+    request: Request,
     secret_id: SecretIdPath,
     payload: RevealSecretRequest | None = None,
     session: Session = Depends(get_session),
     encryption_key: bytes = Depends(get_encryption_key),
 ) -> RevealSecretResponse:
+    reject_when_rate_limited(request, scope="reveal", policy=REVEAL_LIMIT, consume=True)
+    submitted_code = payload.secret_code if payload else None
+    if submitted_code is not None:
+        reject_when_rate_limited(
+            request,
+            scope=f"secret-code:{secret_id}",
+            policy=FAILED_CODE_LIMIT,
+            consume=False,
+        )
+
     try:
         result = reveal_secret(
             session,
@@ -175,6 +253,13 @@ def reveal_secret_endpoint(
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="Secret is unavailable") from error
 
     if result.state is SecretState.CODE_REQUIRED:
+        if submitted_code is not None:
+            reject_when_rate_limited(
+                request,
+                scope=f"secret-code:{secret_id}",
+                policy=FAILED_CODE_LIMIT,
+                consume=True,
+            )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Secret code is required or invalid")
 
     if result.state is not SecretState.ACTIVE or result.plaintext is None:

@@ -31,6 +31,17 @@ def secret_id(number: int) -> str:
     return f"{number:048x}"
 
 
+def assert_sensitive_response_headers(response) -> None:
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["Expires"] == "0"
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["Referrer-Policy"] == "no-referrer"
+    assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
+    assert "web-share=(self)" in response.headers["Permissions-Policy"]
+
+
 def test_default_secret_reveals_repeatedly_until_expiry(client: TestClient) -> None:
     identifier = secret_id(1)
     create_response = client.post("/api/secrets", json=create_payload(identifier))
@@ -71,6 +82,7 @@ def test_secret_code_is_required_without_being_exposed_or_consumed(client: TestC
     assert required.status_code == 401
     assert wrong.status_code == 401
     assert required.json() == {"detail": "Secret code is required or invalid"}
+    assert_sensitive_response_headers(required)
     assert code not in required.text
     assert correct.status_code == 200
     assert repeat.status_code == 200
@@ -92,6 +104,7 @@ def test_status_for_missing_secret_does_not_reveal_sensitive_data(client: TestCl
     assert response.json()["status"] == "missing"
     assert "ciphertext" not in response.json()
     assert "plaintext" not in response.json()
+    assert_sensitive_response_headers(response)
 
 
 def test_create_endpoint_rejects_invalid_input_and_expired_time(client: TestClient) -> None:
@@ -163,6 +176,7 @@ def test_expired_secret_cannot_be_revealed_after_expiry(client: TestClient) -> N
     response = client.post(f"/api/secrets/{identifier}/reveal")
     assert response.status_code == 410
     assert response.json() == {"detail": "Secret is unavailable"}
+    assert_sensitive_response_headers(response)
 
 
 def test_concurrent_default_reveals_succeed_before_expiry(client: TestClient) -> None:
@@ -184,3 +198,66 @@ def test_concurrent_destroy_on_open_allows_one_reveal(client: TestClient) -> Non
 
     assert [response.status_code for response in responses].count(200) == 1
     assert [response.status_code for response in responses].count(410) == 4
+
+
+def test_create_requests_are_rate_limited_without_reflecting_plaintext(client: TestClient, caplog: pytest.LogCaptureFixture) -> None:
+    marker = "CREATE-SECRET-MUST-NOT-APPEAR"
+    for number in range(20, 26):
+        response = client.post("/api/secrets", json=create_payload(secret_id(number), plaintext=f"{marker}-{number}"))
+        assert response.status_code == 201
+
+    blocked = client.post("/api/secrets", json=create_payload(secret_id(26), plaintext=marker))
+    assert blocked.status_code == 429
+    assert blocked.json() == {"detail": "Too many requests. Try again later."}
+    assert int(blocked.headers["Retry-After"]) > 0
+    assert marker not in blocked.text
+    assert marker not in caplog.text
+
+
+def test_reveal_requests_are_rate_limited_without_exposing_secret(client: TestClient, caplog: pytest.LogCaptureFixture) -> None:
+    identifier = secret_id(27)
+    marker = "REVEAL-SECRET-MUST-NOT-APPEAR"
+    assert client.post("/api/secrets", json=create_payload(identifier, plaintext=marker)).status_code == 201
+
+    for _ in range(60):
+        response = client.post(f"/api/secrets/{identifier}/reveal")
+        assert response.status_code == 200
+
+    blocked = client.post(f"/api/secrets/{identifier}/reveal")
+    assert blocked.status_code == 429
+    assert int(blocked.headers["Retry-After"]) > 0
+    assert_sensitive_response_headers(blocked)
+    assert marker not in blocked.text
+    assert marker not in caplog.text
+
+
+def test_failed_secret_code_attempts_are_limited_per_secret_without_blocking_valid_use(client: TestClient, caplog: pytest.LogCaptureFixture) -> None:
+    protected_id = secret_id(28)
+    other_id = secret_id(29)
+    code = "correct-secret-code-2026"
+    marker = "CODE-MUST-NOT-APPEAR-IN-LOGS"
+    assert client.post("/api/secrets", json=create_payload(protected_id, secret_code=code)).status_code == 201
+    assert client.post("/api/secrets", json=create_payload(other_id, secret_code=code)).status_code == 201
+
+    for _ in range(5):
+        wrong = client.post(f"/api/secrets/{protected_id}/reveal", json={"secret_code": marker})
+        assert wrong.status_code == 401
+
+    blocked = client.post(f"/api/secrets/{protected_id}/reveal", json={"secret_code": code})
+    assert blocked.status_code == 429
+    assert int(blocked.headers["Retry-After"]) > 0
+    assert_sensitive_response_headers(blocked)
+    assert marker not in caplog.text
+    assert code not in caplog.text
+
+    other_secret = client.post(f"/api/secrets/{other_id}/reveal", json={"secret_code": code})
+    assert other_secret.status_code == 200
+
+
+def test_reveal_response_has_no_store_and_browser_protection_headers(client: TestClient) -> None:
+    identifier = secret_id(30)
+    assert client.post("/api/secrets", json=create_payload(identifier)).status_code == 201
+
+    response = client.post(f"/api/secrets/{identifier}/reveal")
+    assert response.status_code == 200
+    assert_sensitive_response_headers(response)

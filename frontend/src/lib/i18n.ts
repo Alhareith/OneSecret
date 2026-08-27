@@ -14,6 +14,8 @@ type Copy = {
   creating: string;
   emptyMessage: string;
   generalError: string;
+  rateLimitedTitle: string;
+  rateLimitedDescription: string;
   successTitle: string;
   successDescription: string;
   copy: string;
@@ -45,6 +47,7 @@ type Copy = {
   secretCodePromptDescription: string;
   secretCodeRequired: string;
   secretCodeInvalid: string;
+  secretCodeThrottled: string;
   unlock: string;
   unlocking: string;
 };
@@ -64,6 +67,8 @@ export const copy: Record<Language, Copy> = {
     creating: "جارٍ إنشاء الرابط…",
     emptyMessage: "اكتب رسالة أولًا.",
     generalError: "تعذر إنشاء الرابط الآن. حاول مرة أخرى.",
+    rateLimitedTitle: "حاول بعد قليل",
+    rateLimitedDescription: "هناك محاولات كثيرة الآن. انتظر قليلًا ثم حاول مرة أخرى.",
     successTitle: "الرابط جاهز",
     successDescription: "أرسله للشخص الذي تريد.",
     copy: "نسخ الرابط",
@@ -95,6 +100,7 @@ export const copy: Record<Language, Copy> = {
     secretCodePromptDescription: "هذه الرسالة محمية بكود من المرسل.",
     secretCodeRequired: "أدخل Secret Code أولًا.",
     secretCodeInvalid: "Secret Code غير صحيح أو تعذر فتح الرسالة.",
+    secretCodeThrottled: "تمت محاولات كثيرة. انتظر قليلًا ثم حاول مرة أخرى.",
     unlock: "فتح الرسالة",
     unlocking: "جارٍ الفتح…",
   },
@@ -112,6 +118,8 @@ export const copy: Record<Language, Copy> = {
     creating: "Creating link…",
     emptyMessage: "Write a message first.",
     generalError: "The link could not be created. Please try again.",
+    rateLimitedTitle: "Please try again shortly",
+    rateLimitedDescription: "There are too many attempts right now. Please wait and try again.",
     successTitle: "Your link is ready",
     successDescription: "Send it to the person you choose.",
     copy: "Copy link",
@@ -143,6 +151,7 @@ export const copy: Record<Language, Copy> = {
     secretCodePromptDescription: "The sender protected this message with a code.",
     secretCodeRequired: "Enter the Secret Code first.",
     secretCodeInvalid: "The Secret Code is invalid or the message cannot be opened.",
+    secretCodeThrottled: "Too many attempts. Please wait and try again.",
     unlock: "Open message",
     unlocking: "Opening…",
   },

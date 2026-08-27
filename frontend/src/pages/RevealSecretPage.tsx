@@ -4,7 +4,7 @@ import { ApiError, revealSecret } from "../lib/api";
 import { copy, Language } from "../lib/i18n";
 import { createRevealRequestCache } from "../lib/reveal-request-cache";
 
-type RevealView = "opening" | "code" | "unavailable" | "revealed";
+type RevealView = "opening" | "code" | "throttled" | "unavailable" | "revealed";
 
 export default function RevealSecretPage({ secretId }: { secretId: string }) {
   const [language, setLanguage] = useState<Language>("ar");
@@ -30,7 +30,14 @@ export default function RevealSecretPage({ secretId }: { secretId: string }) {
         }
       })
       .catch((error: unknown) => {
-        if (!cancelled) setView(error instanceof ApiError && error.status === 401 ? "code" : "unavailable");
+        if (cancelled) return;
+        if (error instanceof ApiError && error.status === 401) {
+          setView("code");
+        } else if (error instanceof ApiError && error.status === 429) {
+          setView("throttled");
+        } else {
+          setView("unavailable");
+        }
       });
 
     return () => {
@@ -53,8 +60,8 @@ export default function RevealSecretPage({ secretId }: { secretId: string }) {
       setPlaintext(result.plaintext);
       setSecretCode("");
       setView("revealed");
-    } catch {
-      setCodeError(text.secretCodeInvalid);
+    } catch (error: unknown) {
+      setCodeError(error instanceof ApiError && error.status === 429 ? text.secretCodeThrottled : text.secretCodeInvalid);
     } finally {
       setIsUnlocking(false);
     }
@@ -139,6 +146,13 @@ export default function RevealSecretPage({ secretId }: { secretId: string }) {
             <div className="rounded-3xl border border-slate-200 bg-white px-6 py-14 text-center shadow-[0_18px_50px_-28px_rgba(15,23,42,0.28)] sm:px-10">
               <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">{text.unavailableTitle}</h1>
               <p className="mx-auto mt-3 max-w-md text-base leading-7 text-slate-500">{text.unavailableDescription}</p>
+            </div>
+          )}
+
+          {view === "throttled" && (
+            <div className="rounded-3xl border border-slate-200 bg-white px-6 py-14 text-center shadow-[0_18px_50px_-28px_rgba(15,23,42,0.28)] sm:px-10">
+              <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">{text.rateLimitedTitle}</h1>
+              <p className="mx-auto mt-3 max-w-md text-base leading-7 text-slate-500">{text.rateLimitedDescription}</p>
             </div>
           )}
         </section>

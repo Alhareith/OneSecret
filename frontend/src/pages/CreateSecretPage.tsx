@@ -1,5 +1,5 @@
 import { FormEvent, useState } from "react";
-import { createSecret } from "../lib/api";
+import { ApiError, createSecret } from "../lib/api";
 import { copy, Language } from "../lib/i18n";
 
 const durationOptions = [1, 5, 15, 60, 1440] as const;
@@ -66,8 +66,8 @@ export default function CreateSecretPage() {
       setMessage("");
       setSecretCode("");
       setDestroyOnOpen(false);
-    } catch {
-      setError(text.generalError);
+    } catch (error: unknown) {
+      setError(error instanceof ApiError && error.status === 429 ? text.rateLimitedDescription : text.generalError);
     } finally {
       setIsSubmitting(false);
     }
