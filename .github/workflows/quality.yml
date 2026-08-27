@@ -14,16 +14,16 @@ jobs:
     steps:
       - name: جلب الشيفرة
         uses: actions/checkout@v4
+      - name: إعداد pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
       - name: إعداد Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
-      - name: إعداد pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
       - name: تثبيت اعتماديات الواجهة
         working-directory: frontend
         run: pnpm install --frozen-lockfile
