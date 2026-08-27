@@ -43,6 +43,10 @@ class CancelResult:
     cancelled: bool
 
 
+CANCEL_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+CANCEL_CODE_LENGTH = 5
+
+
 def utc_now() -> datetime:
     """يعيد الوقت الحالي بتوقيت UTC من دون معلومات منطقة لأن SQLite تختبره بهذه الصورة."""
 
@@ -59,9 +63,9 @@ def normalize_utc(value: datetime) -> datetime:
 
 
 def generate_cancel_code() -> str:
-    """ينشئ رمز إلغاء عشوائيًا عالي العشوائية للمرسل فقط."""
+    """ينشئ رمز إلغاء قصيرًا من رموز غير ملتبسة للمرسل فقط."""
 
-    return secrets.token_urlsafe(32)
+    return "".join(secrets.choice(CANCEL_CODE_ALPHABET) for _ in range(CANCEL_CODE_LENGTH))
 
 
 def create_secret(

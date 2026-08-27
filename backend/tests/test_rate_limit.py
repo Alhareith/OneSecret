@@ -20,6 +20,6 @@ def test_expired_buckets_are_cleaned_before_new_request() -> None:
     assert limiter.consume(scope="create", source="source-one", policy=CREATE_SECRET_LIMIT) is None
     assert len(limiter._events) == 1
 
-    now[0] = 601.0
+    now[0] = 901.0
     assert limiter.consume(scope="reveal", source="source-two", policy=REVEAL_LIMIT) is None
     assert len(limiter._events) == 1

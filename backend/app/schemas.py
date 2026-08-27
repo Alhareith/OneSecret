@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, field_validator
 
 SecretState = Literal["active", "used", "expired", "missing"]
 SECRET_ID_PATTERN = r"^[a-f0-9]{48}$"
+CANCEL_CODE_PATTERN = r"^[A-HJ-NP-Z2-9]{5}$"
 MAX_SECRET_LIFETIME = timedelta(hours=24)
 
 
@@ -39,7 +40,7 @@ class CreateSecretResponse(BaseModel):
     id: str
     expires_at: datetime
     status: Literal["active"] = "active"
-    cancel_code: str = Field(min_length=32, max_length=64)
+    cancel_code: str = Field(min_length=5, max_length=5, pattern=CANCEL_CODE_PATTERN)
 
 
 class SecretStatusResponse(BaseModel):
@@ -58,7 +59,14 @@ class RevealSecretRequest(BaseModel):
 
 
 class CancelSecretRequest(BaseModel):
-    cancel_code: str = Field(min_length=32, max_length=64)
+    cancel_code: str = Field(min_length=5, max_length=5, pattern=CANCEL_CODE_PATTERN)
+
+    @field_validator("cancel_code", mode="before")
+    @classmethod
+    def normalize_cancel_code(cls, value: object) -> object:
+        """يسمح بلصق الرمز القصير أو كتابته بأحرف صغيرة من دون توسيع مجموعة الرموز."""
+
+        return value.strip().upper() if isinstance(value, str) else value
 
 
 class CancelSecretResponse(BaseModel):

@@ -271,7 +271,8 @@ def test_create_returns_cancel_code_once_and_stores_only_derived_material(client
     assert_sensitive_response_headers(response)
     body = response.json()
     cancel_code = body["cancel_code"]
-    assert 32 <= len(cancel_code) <= 64
+    assert len(cancel_code) == 5
+    assert set(cancel_code) <= set("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
     assert "plaintext" not in body
     assert "secret_code" not in body
 
@@ -292,7 +293,7 @@ def test_correct_cancel_code_disables_secret_and_hides_cancelled_state(client: T
     created = client.post("/api/secrets", json=create_payload(identifier, plaintext="CANCELLED-SECRET-MARKER"))
     cancel_code = created.json()["cancel_code"]
 
-    cancelled = client.post(f"/api/secrets/{identifier}/cancel", json={"cancel_code": cancel_code})
+    cancelled = client.post(f"/api/secrets/{identifier}/cancel", json={"cancel_code": cancel_code.lower()})
     reveal = client.post(f"/api/secrets/{identifier}/reveal")
     status_response = client.get(f"/api/secrets/{identifier}/status")
 
@@ -323,7 +324,7 @@ def test_wrong_cancel_code_is_generic_and_does_not_disable_secret(client: TestCl
     identifier = secret_id(33)
     created = client.post("/api/secrets", json=create_payload(identifier, plaintext="available before valid cancellation"))
     valid_code = created.json()["cancel_code"]
-    wrong_code = "WRONG-CANCEL-CODE-MUST-NOT-APPEAR-2026"
+    wrong_code = "ZZZZZ"
 
     wrong = client.post(f"/api/secrets/{identifier}/cancel", json={"cancel_code": wrong_code})
     reveal = client.post(f"/api/secrets/{identifier}/reveal")
@@ -340,7 +341,7 @@ def test_wrong_cancel_code_is_generic_and_does_not_disable_secret(client: TestCl
 
 def test_cancel_rejects_missing_expired_and_invalid_code_without_reflection(client: TestClient) -> None:
     identifier = secret_id(34)
-    marker = "CANCEL-CODE-MUST-NOT-BE-REFLECTED-2026"
+    marker = "ZZZZZ"
 
     missing = client.post(f"/api/secrets/{identifier}/cancel", json={"cancel_code": marker})
     assert missing.status_code == 410
@@ -369,11 +370,11 @@ def test_cancel_rejects_missing_expired_and_invalid_code_without_reflection(clie
 def test_failed_cancel_code_attempts_are_limited_per_secret_without_logging_codes(client: TestClient, caplog: pytest.LogCaptureFixture) -> None:
     protected_id = secret_id(36)
     other_id = secret_id(37)
-    marker = "CANCEL-CODE-MUST-NOT-APPEAR-IN-LOGS-2026"
+    marker = "ZZZZZ"
     protected = client.post("/api/secrets", json=create_payload(protected_id))
     other = client.post("/api/secrets", json=create_payload(other_id))
 
-    for _ in range(5):
+    for _ in range(3):
         wrong = client.post(f"/api/secrets/{protected_id}/cancel", json={"cancel_code": marker})
         assert wrong.status_code == 410
 
@@ -386,3 +387,21 @@ def test_failed_cancel_code_attempts_are_limited_per_secret_without_logging_code
     assert marker not in caplog.text
     assert protected.json()["cancel_code"] not in caplog.text
     assert other_cancel.status_code == 200
+
+
+def test_short_cancel_code_global_limit_cannot_be_bypassed_by_another_source(client: TestClient) -> None:
+    identifier = secret_id(38)
+    created = client.post("/api/secrets", json=create_payload(identifier))
+    cancel_code = created.json()["cancel_code"]
+
+    for _ in range(3):
+        assert client.post(f"/api/secrets/{identifier}/cancel", json={"cancel_code": "ZZZZZ"}).status_code == 410
+
+    second_source = TestClient(app, client=("198.51.100.37", 50000))
+    for _ in range(2):
+        assert second_source.post(f"/api/secrets/{identifier}/cancel", json={"cancel_code": "ZZZZZ"}).status_code == 410
+
+    blocked = second_source.post(f"/api/secrets/{identifier}/cancel", json={"cancel_code": cancel_code})
+    assert blocked.status_code == 429
+    assert int(blocked.headers["Retry-After"]) > 0
+    assert_sensitive_response_headers(blocked)

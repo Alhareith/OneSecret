@@ -72,6 +72,8 @@ type Copy = {
   cancelSuccessTitle: string;
   cancelSuccessDescription: string;
   cancelBackToCreate: string;
+  cancelExistingTitle: string;
+  cancelExistingDescription: string;
 };
 
 export const copy: Record<Language, Copy> = {
@@ -126,7 +128,7 @@ export const copy: Record<Language, Copy> = {
     unlock: "فتح الرسالة",
     unlocking: "جارٍ الفتح…",
     cancelCodeTitle: "رمز إلغاء الرابط",
-    cancelCodeDescription: "احفظه الآن في مكان آمن. يظهر هنا مرة واحدة فقط، ولا ترسله مع الرابط.",
+    cancelCodeDescription: "رمز من خمسة أحرف أو أرقام واضحة. احفظه الآن ولا ترسله مع الرابط.",
     copyCancelCode: "نسخ رمز الإلغاء",
     cancelCodeCopied: "تم نسخ رمز الإلغاء.",
     cancelCodeCopyFailed: "انسخ رمز الإلغاء يدويًا واحفظه في مكان آمن.",
@@ -138,8 +140,8 @@ export const copy: Record<Language, Copy> = {
     cancelReferencePlaceholder: "https://…/s/…",
     cancelReferenceError: "أدخل رابط رسالة صحيحًا أو معرّفًا صالحًا.",
     cancelCodeLabel: "رمز الإلغاء",
-    cancelCodePlaceholder: "الرمز الذي ظهر عند إنشاء الرابط",
-    cancelCodeRequired: "أدخل رمز الإلغاء كاملًا.",
+    cancelCodePlaceholder: "مثال: A7K2Z",
+    cancelCodeRequired: "أدخل رمز الإلغاء المكون من خمسة رموز.",
     cancelAction: "إلغاء الرابط",
     cancelling: "جارٍ إلغاء الرابط…",
     cancelUnavailable: "تعذر إلغاء هذا الرابط. تحقق من البيانات ثم حاول مرة أخرى.",
@@ -147,6 +149,8 @@ export const copy: Record<Language, Copy> = {
     cancelSuccessTitle: "تم إلغاء الرابط",
     cancelSuccessDescription: "لن يعود الرابط متاحًا لفتح الرسالة.",
     cancelBackToCreate: "إنشاء رسالة جديدة",
+    cancelExistingTitle: "إلغاء رابط موجود",
+    cancelExistingDescription: "ألصق الرابط وأدخل رمز الإلغاء الذي حفظته.",
   },
   en: {
     appName: "OneSecret",
@@ -199,7 +203,7 @@ export const copy: Record<Language, Copy> = {
     unlock: "Open message",
     unlocking: "Opening…",
     cancelCodeTitle: "Link cancellation code",
-    cancelCodeDescription: "Save it somewhere safe now. It is shown here only once; do not send it with the link.",
+    cancelCodeDescription: "Five clear letters or numbers. Save it now and do not send it with the link.",
     copyCancelCode: "Copy cancellation code",
     cancelCodeCopied: "Cancellation code copied.",
     cancelCodeCopyFailed: "Copy the cancellation code manually and keep it somewhere safe.",
@@ -211,8 +215,8 @@ export const copy: Record<Language, Copy> = {
     cancelReferencePlaceholder: "https://…/s/…",
     cancelReferenceError: "Enter a valid message link or identifier.",
     cancelCodeLabel: "Cancellation code",
-    cancelCodePlaceholder: "The code shown when the link was created",
-    cancelCodeRequired: "Enter the complete cancellation code.",
+    cancelCodePlaceholder: "Example: A7K2Z",
+    cancelCodeRequired: "Enter the five-symbol cancellation code.",
     cancelAction: "Cancel link",
     cancelling: "Cancelling link…",
     cancelUnavailable: "This link could not be cancelled. Check the details and try again.",
@@ -220,5 +224,7 @@ export const copy: Record<Language, Copy> = {
     cancelSuccessTitle: "Link cancelled",
     cancelSuccessDescription: "The link can no longer open the message.",
     cancelBackToCreate: "Create a new message",
+    cancelExistingTitle: "Cancel an existing link",
+    cancelExistingDescription: "Paste the link and enter the cancellation code you saved.",
   },
 };

@@ -18,6 +18,7 @@ from app.config import get_settings, load_encryption_key
 from app.database import Base, build_engine, build_session_factory
 from app.rate_limit import (
     CANCEL_LIMIT,
+    FAILED_CANCEL_CODE_GLOBAL_LIMIT,
     CREATE_SECRET_LIMIT,
     FAILED_CANCEL_CODE_LIMIT,
     FAILED_CODE_LIMIT,
@@ -91,7 +92,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="OneSecret API", version="1.2.0", lifespan=lifespan)
+app = FastAPI(title="OneSecret API", version="1.2.1", lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -166,15 +167,16 @@ def reject_when_rate_limited(
     scope: str,
     policy: RateLimit,
     consume: bool,
+    source: str | None = None,
 ) -> None:
     """يفرض حدًا ويرسل سجلًا مجردًا من أي بيانات سرية عند الحجب."""
 
     limiter = get_rate_limiter(request)
-    source = get_client_source(request)
+    bucket_source = source if source is not None else get_client_source(request)
     retry_after = (
-        limiter.consume(scope=scope, source=source, policy=policy)
+        limiter.consume(scope=scope, source=bucket_source, policy=policy)
         if consume
-        else limiter.retry_after(scope=scope, source=source, policy=policy)
+        else limiter.retry_after(scope=scope, source=bucket_source, policy=policy)
     )
     if retry_after is None:
         return
@@ -297,6 +299,13 @@ def cancel_secret_endpoint(
         policy=FAILED_CANCEL_CODE_LIMIT,
         consume=False,
     )
+    reject_when_rate_limited(
+        request,
+        scope=f"cancel-code-global:{secret_id}",
+        policy=FAILED_CANCEL_CODE_GLOBAL_LIMIT,
+        consume=False,
+        source="all-sources",
+    )
     result = cancel_secret(session, secret_id, cancel_code=payload.cancel_code)
     if not result.cancelled:
         reject_when_rate_limited(
@@ -304,6 +313,13 @@ def cancel_secret_endpoint(
             scope=f"cancel-code:{secret_id}",
             policy=FAILED_CANCEL_CODE_LIMIT,
             consume=True,
+        )
+        reject_when_rate_limited(
+            request,
+            scope=f"cancel-code-global:{secret_id}",
+            policy=FAILED_CANCEL_CODE_GLOBAL_LIMIT,
+            consume=True,
+            source="all-sources",
         )
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="Secret is unavailable")
 

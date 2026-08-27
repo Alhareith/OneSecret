@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
 import { ApiError, createSecret } from "../lib/api";
+import CancelSecretForm from "../components/CancelSecretForm";
 import { copy, Language } from "../lib/i18n";
 
 const durationOptions = [1, 5, 15, 60, 1440] as const;
@@ -227,7 +228,7 @@ export default function CreateSecretPage() {
                 <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4">
                   <h3 className="text-sm font-bold text-amber-950">{text.cancelCodeTitle}</h3>
                   <p className="mt-1 text-xs leading-5 text-amber-800">{text.cancelCodeDescription}</p>
-                  <p dir="ltr" className="mt-3 overflow-hidden text-ellipsis whitespace-nowrap rounded-lg border border-amber-200 bg-white px-3 py-2.5 text-left text-sm font-semibold tracking-wide text-amber-950">{cancelCode}</p>
+                  <p dir="ltr" className="mt-3 rounded-lg border border-amber-200 bg-white px-3 py-3 text-center font-mono text-xl font-black tracking-[0.28em] text-amber-950">{cancelCode}</p>
                   <div className="mt-3 grid grid-cols-2 gap-3">
                     <button type="button" onClick={copyCancelCode} className="rounded-xl border border-amber-300 bg-white px-4 py-3 text-sm font-bold text-amber-950 transition hover:border-amber-500 active:scale-[0.99]">{text.copyCancelCode}</button>
                     <a href="/cancel" className="rounded-xl border border-amber-900 bg-amber-900 px-4 py-3 text-center text-sm font-bold text-white no-underline transition hover:bg-amber-950 active:scale-[0.99]">{text.cancelLinkAction}</a>
@@ -236,6 +237,12 @@ export default function CreateSecretPage() {
                 {copyNotice && <p className="mt-3 text-center text-sm font-medium text-slate-600">{copyNotice}</p>}
               </div>
             )}
+
+            <section className="mt-6 border-t border-slate-200 pt-6" aria-labelledby="cancel-existing-title">
+              <h2 id="cancel-existing-title" className="text-base font-bold text-slate-900">{text.cancelExistingTitle}</h2>
+              <p className="mt-1 text-sm leading-6 text-slate-500">{text.cancelExistingDescription}</p>
+              <CancelSecretForm language={language} compact />
+            </section>
           </div>
         </section>
       </div>

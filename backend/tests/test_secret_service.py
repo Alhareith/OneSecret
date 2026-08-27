@@ -9,11 +9,14 @@ from cryptography.exceptions import InvalidTag
 from app.crypto import generate_key
 from app.database import Base, build_engine, build_session_factory
 from app.secrets_service import (
+    CANCEL_CODE_ALPHABET,
+    CANCEL_CODE_LENGTH,
     DuplicateSecretIdError,
     SecretState,
     cancel_secret,
     create_secret,
     get_secret_state,
+    generate_cancel_code,
     reveal_secret,
 )
 
@@ -176,6 +179,13 @@ def test_secret_code_is_derived_and_required_without_consuming_repeatable_secret
     assert expired.state == SecretState.EXPIRED
     assert expired.plaintext is None
     assert secret.used_at is None
+
+
+def test_generated_cancel_code_uses_five_unambiguous_symbols() -> None:
+    cancel_code = generate_cancel_code()
+
+    assert len(cancel_code) == CANCEL_CODE_LENGTH == 5
+    assert all(symbol in CANCEL_CODE_ALPHABET for symbol in cancel_code)
 
 
 def test_cancel_secret_requires_derived_sender_code_and_clears_sensitive_material(session) -> None:
