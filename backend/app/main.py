@@ -79,7 +79,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="OneSecret API", version="1.1.0", lifespan=lifespan)
+app = FastAPI(title="OneSecret API", version="1.1.1", lifespan=lifespan)
 
 
 @app.middleware("http")
