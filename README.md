@@ -177,6 +177,7 @@ OneSecret/
 | [`docs/04-api-lifecycle.md`](./docs/04-api-lifecycle.md) | إنشاء السر وReveal وحالات الانتهاء والإتلاف الذري |
 | [`docs/11-expiry-secret-code-design.md`](./docs/11-expiry-secret-code-design.md) | العرض المتكرر حتى الانتهاء وSecret Code الاختياري |
 | [`docs/13-v1-1-hardening-design.md`](./docs/13-v1-1-hardening-design.md) | حدود الطلبات والرؤوس والسجل الآمن وقيود التشغيل |
+| [`docs/14-github-publication.md`](./docs/14-github-publication.md) | المستودع العام والإصدارات وبوابة الجودة ومراجعة README |
 
 راجع [`CHANGELOG.md`](./CHANGELOG.md) لتفاصيل ما دخل كل إصدار منشور.
 
