@@ -4,5 +4,7 @@ uvicorn[standard]==0.52.1
 sqlalchemy==2.0.52
 pymysql==1.2.0
 cryptography==50.0.0
+pycryptodome
+python-multipart
 pytest==9.1.1
 httpx2==2.12.0
