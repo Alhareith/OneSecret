@@ -1,5 +1,4 @@
-// العقد النهائي لاتصال واجهة أيمن بمسار ملفات RSA.
-// هذا الملف لا يحتوي React ولا منطق RSA/AES؛ فقط أنواع البيانات وطلبات fetch.
+import { ApiError } from "./api";
 
 export type RsaKeyPair = {
   public_key_pem: string;
@@ -21,26 +20,44 @@ export type RsaFileDecrypted = {
 };
 
 export async function generateRsaKeyPair(): Promise<RsaKeyPair> {
-  throw new Error("RSA_KEYPAIR_NOT_IMPLEMENTED");
+  const response = await fetch("/api/rsa-file/generate-keypair", {
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new ApiError(response.status, "GENERATE_KEYPAIR_FAILED");
+  }
+
+  return response.json() as Promise<RsaKeyPair>;
 }
 
 export async function encryptRsaFile(file: File, publicKeyPem: string): Promise<RsaFileEncrypted> {
-  void file;
-  void publicKeyPem;
-  throw new Error("RSA_FILE_ENCRYPT_NOT_IMPLEMENTED");
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("public_key_pem", publicKeyPem);
+
+  const response = await fetch("/api/rsa-file/encrypt", {
+    method: "POST",
+    body: formData,
+  });
+  if (!response.ok) {
+    throw new ApiError(response.status, "ENCRYPT_FILE_FAILED");
+  }
+
+  return response.json() as Promise<RsaFileEncrypted>;
 }
 
 export async function decryptRsaFile(
   payload: RsaFileEncrypted,
   privateKeyPem: string,
 ): Promise<RsaFileDecrypted> {
-  void payload;
-  void privateKeyPem;
-  throw new Error("RSA_FILE_DECRYPT_NOT_IMPLEMENTED");
-}
+  const response = await fetch("/api/rsa-file/decrypt", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...payload, private_key_pem: privateKeyPem }),
+  });
+  if (!response.ok) {
+    throw new ApiError(response.status, "DECRYPT_FILE_FAILED");
+  }
 
-// عقد التنفيذ:
-// generateRsaKeyPair: POST /api/rsa-file/generate-keypair.
-// encryptRsaFile: FormData بحقل file وحقل public_key_pem -> POST /api/rsa-file/encrypt.
-// decryptRsaFile: JSON يجمع الحزمة المشفرة مع private_key_pem -> POST /api/rsa-file/decrypt.
-// عند !response.ok ارمِ خطأ عامًا فقط، ولا تطبع PEM أو ciphertext في console.
+  return response.json() as Promise<RsaFileDecrypted>;
+}
