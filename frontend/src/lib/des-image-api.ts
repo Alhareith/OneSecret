@@ -16,13 +16,35 @@ export type DesImageDecrypted = {
 };
 
 export async function encryptDesImage(file: File): Promise<DesImageEncrypted> {
-  void file;
-  throw new Error("DES_IMAGE_ENCRYPT_NOT_IMPLEMENTED");
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch("/api/des-image/encrypt", {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to encrypt image. Please check the file and try again.");
+  }
+
+  return response.json();
 }
 
 export async function decryptDesImage(payload: DesImageEncrypted): Promise<DesImageDecrypted> {
-  void payload;
-  throw new Error("DES_IMAGE_DECRYPT_NOT_IMPLEMENTED");
+  const response = await fetch("/api/des-image/decrypt", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to decrypt image. Invalid data or key.");
+  }
+
+  return response.json();
 }
 
 // عقد التنفيذ:
