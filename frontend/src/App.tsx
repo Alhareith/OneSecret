@@ -6,6 +6,7 @@ const CancelSecretPage = lazy(() => import("./pages/CancelSecretPage"));
 const RsaFilePage = lazy(() => import("./pages/RsaFilePage"));
 const RsaFileReceivePage = lazy(() => import("./pages/RsaFileReceivePage"));
 const DesImagePage = lazy(() => import("./pages/DesImagePage"));
+const DesImageReceivePage = lazy(() => import("./pages/DesImageReceivePage"));
 
 export default function App() {
   if (window.location.pathname === "/cancel") {
@@ -28,6 +29,15 @@ export default function App() {
     return (
       <Suspense fallback={<main className="min-h-[100dvh] bg-[#f5f7fb]" />}>
         <DesImagePage />
+      </Suspense>
+    );
+  }
+
+  const imageShareMatch = window.location.pathname.match(/^\/i\/([^/]+)$/);
+  if (imageShareMatch?.[1]) {
+    return (
+      <Suspense fallback={<main className="min-h-[100dvh] bg-[#f5f7fb]" />}>
+        <DesImageReceivePage shareId={decodeURIComponent(imageShareMatch[1])} />
       </Suspense>
     );
   }
