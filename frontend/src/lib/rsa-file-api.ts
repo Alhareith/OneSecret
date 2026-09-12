@@ -19,6 +19,13 @@ export type RsaFileDecrypted = {
   data_b64: string;
 };
 
+export type RsaFileShare = {
+  id: string;
+  filename: string;
+  content_type: string;
+  expires_at: string;
+};
+
 export async function generateRsaKeyPair(): Promise<RsaKeyPair> {
   const response = await fetch("/api/rsa-file/generate-keypair", {
     method: "POST",
@@ -57,6 +64,52 @@ export async function decryptRsaFile(
   });
   if (!response.ok) {
     throw new ApiError(response.status, "DECRYPT_FILE_FAILED");
+  }
+
+  return response.json() as Promise<RsaFileDecrypted>;
+}
+
+export async function createRsaFileShare(
+  file: File,
+  publicKeyPem: string,
+  expiresMinutes: number,
+): Promise<RsaFileShare> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("public_key_pem", publicKeyPem);
+  formData.append("expires_minutes", String(expiresMinutes));
+
+  const response = await fetch("/api/rsa-file/share", {
+    method: "POST",
+    body: formData,
+  });
+  if (!response.ok) {
+    throw new ApiError(response.status, "CREATE_FILE_SHARE_FAILED");
+  }
+
+  return response.json() as Promise<RsaFileShare>;
+}
+
+export async function getRsaFileShare(shareId: string): Promise<RsaFileShare> {
+  const response = await fetch(`/api/rsa-file/share/${encodeURIComponent(shareId)}`);
+  if (!response.ok) {
+    throw new ApiError(response.status, "GET_FILE_SHARE_FAILED");
+  }
+
+  return response.json() as Promise<RsaFileShare>;
+}
+
+export async function revealRsaFileShare(
+  shareId: string,
+  privateKeyPem: string,
+): Promise<RsaFileDecrypted> {
+  const response = await fetch(`/api/rsa-file/share/${encodeURIComponent(shareId)}/reveal`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ private_key_pem: privateKeyPem }),
+  });
+  if (!response.ok) {
+    throw new ApiError(response.status, "REVEAL_FILE_SHARE_FAILED");
   }
 
   return response.json() as Promise<RsaFileDecrypted>;
