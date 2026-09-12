@@ -26,6 +26,7 @@ from app.rate_limit import (
     RequestRateLimiter,
     RateLimit,
 )
+from app.rsa_file_api import router as rsa_file_router
 from app.schemas import (
     CancelSecretRequest,
     CancelSecretResponse,
@@ -93,6 +94,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="OneSecret API", version="1.2.1", lifespan=lifespan)
+app.include_router(rsa_file_router)
 
 
 @app.middleware("http")
@@ -107,7 +109,13 @@ async def apply_security_headers(request: Request, call_next):
     response.headers.setdefault("Permissions-Policy", "camera=(), geolocation=(), microphone=(), payment=(), usb=(), web-share=(self)")
 
     path = request.url.path
-    if path == "/api/secrets" or path.startswith("/api/secrets/") or path.startswith("/s/") or path == "/cancel":
+    if (
+        path == "/api/secrets"
+        or path.startswith("/api/secrets/")
+        or path.startswith("/api/rsa-file")
+        or path.startswith("/s/")
+        or path == "/cancel"
+    ):
         response.headers["Cache-Control"] = "no-store"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
