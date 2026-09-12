@@ -41,7 +41,7 @@ class RsaFileShare(Base):
     encrypted_key: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     nonce: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     ciphertext: Mapped[bytes | None] = mapped_column(
-        LargeBinary().with_variant(MEDIUMBLOB, "mysql"),
+        LargeBinary().with_variant(MEDIUMBLOB(), "mysql"),
         nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
