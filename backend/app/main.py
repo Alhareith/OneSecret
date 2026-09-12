@@ -116,7 +116,10 @@ async def apply_security_headers(request: Request, call_next):
         or path.startswith("/api/secrets/")
         or path.startswith("/api/rsa-file")
         or path.startswith("/api/client-crypto")
+        or path.startswith("/api/des-image")
         or path.startswith("/s/")
+        or path.startswith("/f/")
+        or path.startswith("/i/")
         or path == "/cancel"
     ):
         response.headers["Cache-Control"] = "no-store"
