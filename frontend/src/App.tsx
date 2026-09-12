@@ -3,12 +3,21 @@ import CreateSecretPage from "./pages/CreateSecretPage";
 
 const RevealSecretPage = lazy(() => import("./pages/RevealSecretPage"));
 const CancelSecretPage = lazy(() => import("./pages/CancelSecretPage"));
+const RsaFilePage = lazy(() => import("./pages/RsaFilePage"));
 
 export default function App() {
   if (window.location.pathname === "/cancel") {
     return (
       <Suspense fallback={<main className="min-h-[100dvh] bg-[#f5f7fb]" />}>
         <CancelSecretPage />
+      </Suspense>
+    );
+  }
+
+  if (window.location.pathname === "/rsa-file") {
+    return (
+      <Suspense fallback={<main className="min-h-[100dvh] bg-[#f5f7fb]" />}>
+        <RsaFilePage />
       </Suspense>
     );
   }
