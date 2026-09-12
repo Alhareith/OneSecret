@@ -31,5 +31,16 @@ export default function App() {
     );
   }
 
-  return <CreateSecretPage />;
+  return (
+    <>
+      <CreateSecretPage />
+      <a
+        href="/rsa-file"
+        aria-label="إرسال الملفات"
+        className="fixed bottom-5 right-5 z-50 rounded-2xl border border-[#0d1c2f] bg-[linear-gradient(135deg,#334960_0%,#172b44_48%,#0f2035_100%)] px-5 py-3 text-sm font-bold text-white no-underline shadow-[0_12px_30px_-16px_rgba(15,32,53,0.9)] transition hover:brightness-110 active:scale-[0.98] sm:bottom-7 sm:right-7"
+      >
+        إرسال الملفات
+      </a>
+    </>
+  );
 }
