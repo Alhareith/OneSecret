@@ -1,5 +1,8 @@
-// العقد النهائي لاتصال واجهة ملاطف بمسار صور DES.
-// هذا الملف لا يحتوي React ولا منطق DES؛ فقط أنواع البيانات وطلبات fetch.
+export class DesImageApiError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+  }
+}
 
 export type DesImageEncrypted = {
   filename: string;
@@ -15,39 +18,72 @@ export type DesImageDecrypted = {
   data_b64: string;
 };
 
+export type DesImageShareCreated = {
+  id: string;
+  filename: string;
+  content_type: string;
+  expires_at: string;
+  key_fragment: string;
+};
+
+export type DesImageShareInfo = {
+  id: string;
+  filename: string;
+  content_type: string;
+  expires_at: string;
+};
+
+export type DesImageRevealResponse = {
+  id: string;
+  filename: string;
+  content_type: string;
+  data_b64: string;
+};
+
+async function requireOk(response: Response, message: string): Promise<Response> {
+  if (!response.ok) throw new DesImageApiError(response.status, message);
+  return response;
+}
+
 export async function encryptDesImage(file: File): Promise<DesImageEncrypted> {
   const formData = new FormData();
   formData.append("file", file);
-
-  const response = await fetch("/api/des-image/encrypt", {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!response.ok) {
-    throw new Error("Failed to encrypt image. Please check the file and try again.");
-  }
-
-  return response.json();
+  const response = await fetch("/api/des-image/encrypt", { method: "POST", body: formData });
+  await requireOk(response, "فشل تشفير الصورة.");
+  return response.json() as Promise<DesImageEncrypted>;
 }
 
 export async function decryptDesImage(payload: DesImageEncrypted): Promise<DesImageDecrypted> {
   const response = await fetch("/api/des-image/decrypt", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-
-  if (!response.ok) {
-    throw new Error("Failed to decrypt image. Invalid data or key.");
-  }
-
-  return response.json();
+  await requireOk(response, "فشل فك تشفير الصورة.");
+  return response.json() as Promise<DesImageDecrypted>;
 }
 
-// عقد التنفيذ:
-// encryptDesImage: FormData بحقل file -> POST /api/des-image/encrypt.
-// decryptDesImage: JSON من DesImageEncrypted -> POST /api/des-image/decrypt.
-// عند !response.ok ارمِ خطأ عامًا فقط؛ لا تفسر تفاصيل تشفير حساسة هنا.
+export async function createDesImageShare(file: File, expiresMinutes: number): Promise<DesImageShareCreated> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("expires_minutes", String(expiresMinutes));
+  const response = await fetch("/api/des-image/share", { method: "POST", body: formData });
+  await requireOk(response, "تعذر تشفير الصورة وإنشاء رابط المشاركة.");
+  return response.json() as Promise<DesImageShareCreated>;
+}
+
+export async function getDesImageShare(shareId: string): Promise<DesImageShareInfo> {
+  const response = await fetch(`/api/des-image/share/${encodeURIComponent(shareId)}`);
+  await requireOk(response, "تعذر الوصول إلى الصورة المشفرة.");
+  return response.json() as Promise<DesImageShareInfo>;
+}
+
+export async function revealDesImageShare(shareId: string, keyFragment: string): Promise<DesImageRevealResponse> {
+  const response = await fetch(`/api/des-image/share/${encodeURIComponent(shareId)}/reveal`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key_fragment: keyFragment }),
+  });
+  await requireOk(response, "تعذر فك تشفير الصورة.");
+  return response.json() as Promise<DesImageRevealResponse>;
+}

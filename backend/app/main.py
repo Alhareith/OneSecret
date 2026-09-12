@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings, load_encryption_key
+from app.client_crypto_api import router as client_crypto_router
 from app.database import Base, build_engine, build_session_factory
 from app.rate_limit import (
     CANCEL_LIMIT,
@@ -95,6 +96,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="OneSecret API", version="1.2.1", lifespan=lifespan)
 app.include_router(rsa_file_router)
+app.include_router(client_crypto_router)
 
 
 @app.middleware("http")
@@ -113,7 +115,11 @@ async def apply_security_headers(request: Request, call_next):
         path == "/api/secrets"
         or path.startswith("/api/secrets/")
         or path.startswith("/api/rsa-file")
+        or path.startswith("/api/client-crypto")
+        or path.startswith("/api/des-image")
         or path.startswith("/s/")
+        or path.startswith("/f/")
+        or path.startswith("/i/")
         or path == "/cancel"
     ):
         response.headers["Cache-Control"] = "no-store"

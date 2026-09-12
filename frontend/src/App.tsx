@@ -5,6 +5,8 @@ const RevealSecretPage = lazy(() => import("./pages/RevealSecretPage"));
 const CancelSecretPage = lazy(() => import("./pages/CancelSecretPage"));
 const RsaFilePage = lazy(() => import("./pages/RsaFilePage"));
 const RsaFileReceivePage = lazy(() => import("./pages/RsaFileReceivePage"));
+const DesImagePage = lazy(() => import("./pages/DesImagePage"));
+const DesImageReceivePage = lazy(() => import("./pages/DesImageReceivePage"));
 
 export default function App() {
   if (window.location.pathname === "/cancel") {
@@ -19,6 +21,23 @@ export default function App() {
     return (
       <Suspense fallback={<main className="min-h-[100dvh] bg-[#f5f7fb]" />}>
         <RsaFilePage />
+      </Suspense>
+    );
+  }
+
+  if (window.location.pathname === "/des-image") {
+    return (
+      <Suspense fallback={<main className="min-h-[100dvh] bg-[#f5f7fb]" />}>
+        <DesImagePage />
+      </Suspense>
+    );
+  }
+
+  const imageShareMatch = window.location.pathname.match(/^\/i\/([^/]+)$/);
+  if (imageShareMatch?.[1]) {
+    return (
+      <Suspense fallback={<main className="min-h-[100dvh] bg-[#f5f7fb]" />}>
+        <DesImageReceivePage shareId={decodeURIComponent(imageShareMatch[1])} />
       </Suspense>
     );
   }
@@ -44,13 +63,22 @@ export default function App() {
   return (
     <>
       <CreateSecretPage />
-      <a
-        href="/rsa-file"
-        aria-label="إرسال الملفات"
-        className="fixed bottom-5 right-5 z-50 rounded-2xl border border-[#0d1c2f] bg-[linear-gradient(135deg,#334960_0%,#172b44_48%,#0f2035_100%)] px-5 py-3 text-sm font-bold text-white no-underline shadow-[0_12px_30px_-16px_rgba(15,32,53,0.9)] transition hover:brightness-110 active:scale-[0.98] sm:bottom-7 sm:right-7"
-      >
-        إرسال الملفات
-      </a>
+      <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 sm:bottom-7 sm:right-7">
+        <a
+          href="/des-image"
+          aria-label="إرسال الصور"
+          className="rounded-2xl border border-emerald-800 bg-[linear-gradient(135deg,#166534_0%,#14532d_55%,#052e16_100%)] px-5 py-3 text-center text-sm font-bold text-white no-underline shadow-[0_12px_30px_-16px_rgba(20,83,45,0.9)] transition hover:brightness-110 active:scale-[0.98]"
+        >
+          إرسال الصور
+        </a>
+        <a
+          href="/rsa-file"
+          aria-label="إرسال الملفات"
+          className="rounded-2xl border border-[#0d1c2f] bg-[linear-gradient(135deg,#334960_0%,#172b44_48%,#0f2035_100%)] px-5 py-3 text-center text-sm font-bold text-white no-underline shadow-[0_12px_30px_-16px_rgba(15,32,53,0.9)] transition hover:brightness-110 active:scale-[0.98]"
+        >
+          إرسال الملفات
+        </a>
+      </div>
     </>
   );
 }
