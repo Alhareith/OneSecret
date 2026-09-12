@@ -1,197 +1,201 @@
-import { useState, useEffect } from "react";
-import {
-  generateRsaKeyPair,
-  encryptRsaFile,
-  decryptRsaFile,
-  type RsaKeyPair,
-  type RsaFileEncrypted,
-} from "../lib/rsa-file-api";
+import { useState } from "react";
+import { createRsaFileShare, generateRsaKeyPair } from "../lib/rsa-file-api";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
+const durationOptions = [1, 5, 15, 60, 1440] as const;
+
+function encodePemForFragment(pem: string): string {
+  const bytes = new TextEncoder().encode(pem);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function shortShareUrl(shareUrl: string): string {
+  const url = new URL(shareUrl);
+  return `${url.origin}${url.pathname}#k=••••••`;
+}
 
 export default function RsaFilePage() {
-  const [keyPair, setKeyPair] = useState<RsaKeyPair | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [encrypted, setEncrypted] = useState<RsaFileEncrypted | null>(null);
-  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [expiresMinutes, setExpiresMinutes] = useState<(typeof durationOptions)[number]>(15);
+  const [shareUrl, setShareUrl] = useState("");
+  const [expiresAt, setExpiresAt] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
   const [isBusy, setIsBusy] = useState(false);
-
-  useEffect(() => {
-    return () => {
-      if (downloadUrl) {
-        URL.revokeObjectURL(downloadUrl);
-      }
-    };
-  }, [downloadUrl]);
-
-  async function handleGenerateKeys() {
-    setError(null);
-    setIsBusy(true);
-    try {
-      const pair = await generateRsaKeyPair();
-      setKeyPair(pair);
-      setSelectedFile(null);
-      setEncrypted(null);
-      setDownloadUrl(null);
-    } catch {
-      setError("تعذّر توليد المفاتيح. حاول مرة أخرى.");
-    } finally {
-      setIsBusy(false);
-    }
-  }
 
   function handleFileSelect(event: React.ChangeEvent<HTMLInputElement>) {
     setError(null);
+    setNotice("");
+    setShareUrl("");
+    setExpiresAt("");
     const file = event.target.files?.[0] ?? null;
 
     if (!file) {
       setSelectedFile(null);
       return;
     }
-
     if (file.type.startsWith("image/")) {
-      setError("الصور غير مقبولة هنا؛ هذا المسار مخصص للملفات غير الصور فقط.");
+      setSelectedFile(null);
+      setError("الصور لها مسار مستقل في OneSecret؛ اختر ملفًا غير صورة.");
       event.target.value = "";
       return;
     }
-
     if (file.size === 0) {
-      setError("الملف فارغ.");
+      setSelectedFile(null);
+      setError("لا يمكن إرسال ملف فارغ.");
       event.target.value = "";
       return;
     }
-
     if (file.size > MAX_FILE_BYTES) {
-      setError("حجم الملف يتجاوز 5 ميجابايت.");
+      setSelectedFile(null);
+      setError("الحد الأقصى لحجم الملف هو 5 ميجابايت.");
       event.target.value = "";
       return;
     }
 
     setSelectedFile(file);
-    setEncrypted(null);
-    setDownloadUrl(null);
   }
 
-  async function handleEncrypt() {
-    if (!keyPair || !selectedFile) return;
+  async function handleCreateShare() {
+    if (!selectedFile) return;
 
     setError(null);
+    setNotice("");
     setIsBusy(true);
     try {
-      const result = await encryptRsaFile(selectedFile, keyPair.public_key_pem);
-      setEncrypted(result);
-      setDownloadUrl(null);
+      const keyPair = await generateRsaKeyPair();
+      const share = await createRsaFileShare(selectedFile, keyPair.public_key_pem, expiresMinutes);
+      const keyFragment = encodePemForFragment(keyPair.private_key_pem);
+      setShareUrl(`${window.location.origin}/f/${encodeURIComponent(share.id)}#k=${keyFragment}`);
+      setExpiresAt(share.expires_at);
     } catch {
-      setError("فشل التشفير. تأكد من صحة الملف والمفتاح العام.");
+      setError("تعذّر تشفير الملف وإنشاء رابط الإرسال. حاول مرة أخرى.");
     } finally {
       setIsBusy(false);
     }
   }
 
-  async function handleDecrypt() {
-    if (!keyPair || !encrypted) return;
-
-    setError(null);
-    setIsBusy(true);
+  async function copyShareUrl() {
     try {
-      const result = await decryptRsaFile(encrypted, keyPair.private_key_pem);
-      const byteString = atob(result.data_b64);
-      const bytes = new Uint8Array(byteString.length);
-      for (let i = 0; i < byteString.length; i++) {
-        bytes[i] = byteString.charCodeAt(i);
-      }
-      const blob = new Blob([bytes], { type: result.content_type });
-      const url = URL.createObjectURL(blob);
-      setDownloadUrl(url);
+      await navigator.clipboard.writeText(shareUrl);
+      setNotice("تم نسخ رابط الملف.");
     } catch {
-      setError("فشل فك التشفير. تأكد من صحة المفتاح الخاص وسلامة الحزمة.");
-    } finally {
-      setIsBusy(false);
+      setNotice("تعذّر النسخ تلقائيًا.");
+    }
+  }
+
+  async function shareFileLink() {
+    if (typeof navigator.share !== "function") {
+      await copyShareUrl();
+      return;
+    }
+
+    try {
+      await navigator.share({
+        title: "OneSecret",
+        text: "ملف مشفّر عبر OneSecret",
+        url: shareUrl,
+      });
+    } catch (shareError) {
+      if (shareError instanceof DOMException && shareError.name === "AbortError") return;
+      setNotice("تعذّرت المشاركة المباشرة؛ يمكنك نسخ الرابط بدلًا منها.");
     }
   }
 
   return (
-    <main className="min-h-[100dvh] bg-[#f5f7fb] p-6 text-slate-800">
-      <section className="mx-auto max-w-2xl space-y-6">
-        <div>
-          <h1 className="text-2xl font-black text-slate-950">RSA - Files</h1>
-          <p className="mt-3 text-sm leading-7 text-slate-600">
-            مساحة توليد مفاتيح RSA، رفع ملف، تشفيره بالطريقة الهجينة، ثم فكّه واستعادته.
-          </p>
-        </div>
-
-        {error && (
-          <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700">
-            {error}
+    <main dir="rtl" className="min-h-[100dvh] bg-[#f5f7fb] px-5 py-7 text-slate-800 sm:px-8">
+      <section className="mx-auto max-w-2xl">
+        <div className="mb-7 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-bold text-slate-500">OneSecret</p>
+            <h1 className="mt-1 text-3xl font-black tracking-tight text-slate-950">إرسال ملف مشفّر</h1>
           </div>
-        )}
-
-        <div className="rounded-md border border-slate-200 bg-white p-4">
-          <h2 className="font-bold">1. المفاتيح</h2>
-          <button
-            type="button"
-            onClick={handleGenerateKeys}
-            disabled={isBusy}
-            className="mt-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-          >
-            توليد مفاتيح جديدة
-          </button>
-          {keyPair && (
-            <p className="mt-2 text-xs text-slate-500">تم توليد زوج مفاتيح جديد.</p>
-          )}
+          <a href="/" className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 no-underline">الرئيسية</a>
         </div>
 
-        <div className="rounded-md border border-slate-200 bg-white p-4">
-          <h2 className="font-bold">2. الملف</h2>
-          <input
-            type="file"
-            onChange={handleFileSelect}
-            disabled={isBusy || !keyPair}
-            className="mt-2 text-sm"
-          />
-          {selectedFile && (
-            <p className="mt-2 text-xs text-slate-500">
-              {selectedFile.name} ({selectedFile.size} bytes)
-            </p>
-          )}
-        </div>
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_18px_50px_-28px_rgba(15,23,42,0.28)] sm:p-8">
+          <p className="text-sm leading-7 text-slate-600">
+            يُشفّر الملف أولًا باستخدام AES-256-GCM، ثم يُحمى مفتاح AES باستخدام RSA. الخادم يحتفظ بالحزمة المشفّرة فقط، بينما مفتاح الاستلام يبقى داخل رابط المشاركة.
+          </p>
 
-        <div className="rounded-md border border-slate-200 bg-white p-4">
-          <h2 className="font-bold">3. التشفير</h2>
-          <button
-            type="button"
-            onClick={handleEncrypt}
-            disabled={isBusy || !keyPair || !selectedFile}
-            className="mt-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-          >
-            تشفير الملف
-          </button>
-          {encrypted && (
-            <p className="mt-2 text-xs text-slate-500">
-              تم التشفير: {encrypted.filename} ({encrypted.content_type})
-            </p>
-          )}
-        </div>
+          {error && <p role="alert" className="mt-5 rounded-2xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{error}</p>}
 
-        <div className="rounded-md border border-slate-200 bg-white p-4">
-          <h2 className="font-bold">4. فك التشفير</h2>
-          <button
-            type="button"
-            onClick={handleDecrypt}
-            disabled={isBusy || !keyPair || !encrypted}
-            className="mt-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-          >
-            فك التشفير
-          </button>
-          {downloadUrl && encrypted && (
-            <a
-              href={downloadUrl}
-              download={encrypted.filename}
-              className="mt-3 block w-fit rounded-md border border-slate-900 px-4 py-2 text-sm font-semibold text-slate-900"
+          <div className="mt-7 space-y-6">
+            <div>
+              <label className="block text-base font-black text-slate-900" htmlFor="rsa-file">1. اختر الملف</label>
+              <p className="mt-1 text-xs leading-5 text-slate-500">ملف غير صورة، وبحجم أقصى 5 MiB.</p>
+              <input
+                id="rsa-file"
+                type="file"
+                onChange={handleFileSelect}
+                disabled={isBusy}
+                className="mt-3 block w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"
+              />
+              {selectedFile && (
+                <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                  <span className="font-bold">{selectedFile.name}</span>
+                  <span className="mx-2 text-emerald-500">•</span>
+                  {(selectedFile.size / 1024).toFixed(1)} KB
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-base font-black text-slate-900" htmlFor="file-expiry">2. مدة صلاحية الرابط</label>
+              <select
+                id="file-expiry"
+                value={expiresMinutes}
+                onChange={(event) => {
+                  setExpiresMinutes(Number(event.target.value) as (typeof durationOptions)[number]);
+                  setShareUrl("");
+                  setExpiresAt("");
+                }}
+                disabled={isBusy}
+                className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-base outline-none"
+              >
+                <option value={1}>دقيقة واحدة</option>
+                <option value={5}>5 دقائق</option>
+                <option value={15}>15 دقيقة</option>
+                <option value={60}>ساعة واحدة</option>
+                <option value={1440}>24 ساعة</option>
+              </select>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleCreateShare}
+              disabled={isBusy || !selectedFile}
+              className="w-full rounded-2xl border border-[#0d1c2f] bg-[linear-gradient(135deg,#334960_0%,#172b44_48%,#0f2035_100%)] px-5 py-4 text-base font-black text-white shadow-[0_10px_22px_-14px_rgba(15,32,53,0.85)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              تنزيل الملف المسترجع
-            </a>
+              {isBusy ? "جاري التشفير..." : "3. تشفير وإنشاء رابط الإرسال"}
+            </button>
+          </div>
+
+          {shareUrl && (
+            <section className="mt-7 rounded-2xl border border-sky-200 bg-sky-50 p-5" aria-live="polite">
+              <h2 className="text-lg font-black text-slate-950">الرابط جاهز للإرسال</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                أرسل هذا الرابط للمستقبل. الرابط نفسه يحتوي مفتاح فك التشفير، لذلك لا تنشره في مكان عام.
+              </p>
+              <p dir="ltr" className="mt-4 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-sky-200 bg-white px-3 py-3 text-left text-xs font-semibold text-slate-600">
+                {shortShareUrl(shareUrl)}
+              </p>
+              {expiresAt && (
+                <p className="mt-3 text-xs font-semibold text-slate-500">
+                  ينتهي: {new Date(expiresAt).toLocaleString("ar")}
+                </p>
+              )}
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <button type="button" onClick={copyShareUrl} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-black text-slate-800">نسخ الرابط</button>
+                <button type="button" onClick={shareFileLink} className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white">إرسال الرابط</button>
+              </div>
+              <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-6 text-amber-900">
+                الرابط للاستخدام مرة واحدة: بعد أن يستلم المستقبل الملف بنجاح تُمسح الحزمة المشفّرة من الخادم.
+              </p>
+              {notice && <p className="mt-3 text-center text-sm font-bold text-slate-600">{notice}</p>}
+            </section>
           )}
         </div>
       </section>

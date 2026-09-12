@@ -4,6 +4,7 @@ import CreateSecretPage from "./pages/CreateSecretPage";
 const RevealSecretPage = lazy(() => import("./pages/RevealSecretPage"));
 const CancelSecretPage = lazy(() => import("./pages/CancelSecretPage"));
 const RsaFilePage = lazy(() => import("./pages/RsaFilePage"));
+const RsaFileReceivePage = lazy(() => import("./pages/RsaFileReceivePage"));
 
 export default function App() {
   if (window.location.pathname === "/cancel") {
@@ -18,6 +19,15 @@ export default function App() {
     return (
       <Suspense fallback={<main className="min-h-[100dvh] bg-[#f5f7fb]" />}>
         <RsaFilePage />
+      </Suspense>
+    );
+  }
+
+  const fileShareMatch = window.location.pathname.match(/^\/f\/([^/]+)$/);
+  if (fileShareMatch?.[1]) {
+    return (
+      <Suspense fallback={<main className="min-h-[100dvh] bg-[#f5f7fb]" />}>
+        <RsaFileReceivePage shareId={decodeURIComponent(fileShareMatch[1])} />
       </Suspense>
     );
   }
