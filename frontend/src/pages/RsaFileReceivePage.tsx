@@ -129,7 +129,7 @@ export default function RsaFileReceivePage({ shareId }: { shareId: string }) {
               {downloadUrl && (
                 <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
                   <h2 className="text-lg font-black text-emerald-950">تم استلام الملف بنجاح</h2>
-                  <p className="mt-2 text-sm leading-6 text-emerald-800">تم فك التشفير محليًا في هذه الجلسة، وتم حذف الحزمة المشفّرة من الخادم.</p>
+                  <p className="mt-2 text-sm leading-6 text-emerald-800">تم فك تشفير الملف لهذه الجلسة، وتم حذف الحزمة المشفّرة المخزنة من الخادم.</p>
                   <div className="mt-4 grid grid-cols-2 gap-3">
                     <a
                       href={downloadUrl}
