@@ -1,16 +1,108 @@
-"""اختبارات القبول النهائية لمسار صور DES — مسؤولية ملاطف.
+"""اختبارات API صور DES مستقلًا عن التطبيق الرئيسي."""
 
-عند ربط router بالتطبيق للاختبار، يجب إثبات:
-1. /encrypt يقبل PNG وJPEG صحيحتين ضمن الحجم المسموح.
-2. يرفض الملف الفارغ.
-3. يرفض content-type ليس image/png أو image/jpeg.
-4. يرفض صورة تتجاوز MAX_IMAGE_BYTES.
-5. رد التشفير يحتوي filename وcontent_type وkey_b64 وiv_b64 وciphertext_b64.
-6. قيم Base64 قابلة للفك إلى bytes صالحة، والمفتاح 8 bytes والـIV 8 bytes.
-7. /decrypt يعيد data_b64 الذي يساوي bytes الصورة الأصلية byte-for-byte.
-8. Base64 تالف أو مفتاح/IV غير صالح يعيد خطأ 400 عام، لا traceback ولا تفاصيل حساسة.
-9. لا تُحفظ الصورة أو المفتاح في قاعدة البيانات أو ملفات مؤقتة.
-10. اختبار التكامل لا يحتاج أي تعديل في main.py: أنشئ FastAPI صغيرة داخل الاختبار وinclude_router(router).
-"""
+import base64
 
-# أضف اختبارات API هنا بعد تنفيذ endpoints في app.des_image_api.
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from app.des_image_api import MAX_IMAGE_BYTES, router
+
+app = FastAPI()
+app.include_router(router)
+client = TestClient(app)
+
+
+@pytest.mark.parametrize(
+    ("filename", "content_type", "image_bytes"),
+    [
+        ("image.png", "image/png", b"\x89PNG\r\n\x1a\nOneSecret"),
+        ("image.jpg", "image/jpeg", b"\xff\xd8\xffOneSecret\xff\xd9"),
+    ],
+)
+def test_encrypt_accepts_png_and_jpeg_and_returns_valid_package(
+    filename: str,
+    content_type: str,
+    image_bytes: bytes,
+):
+    response = client.post(
+        "/api/des-image/encrypt",
+        files={"file": (filename, image_bytes, content_type)},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["filename"] == filename
+    assert data["content_type"] == content_type
+    assert len(base64.b64decode(data["key_b64"], validate=True)) == 8
+    assert len(base64.b64decode(data["iv_b64"], validate=True)) == 8
+    assert base64.b64decode(data["ciphertext_b64"], validate=True)
+
+
+def test_encrypt_rejects_empty_file():
+    response = client.post(
+        "/api/des-image/encrypt",
+        files={"file": ("empty.png", b"", "image/png")},
+    )
+    assert response.status_code == 400
+
+
+def test_encrypt_rejects_invalid_content_type():
+    response = client.post(
+        "/api/des-image/encrypt",
+        files={"file": ("document.pdf", b"data", "application/pdf")},
+    )
+    assert response.status_code == 400
+
+
+def test_encrypt_rejects_file_over_limit():
+    response = client.post(
+        "/api/des-image/encrypt",
+        files={"file": ("large.jpg", b"0" * (MAX_IMAGE_BYTES + 1), "image/jpeg")},
+    )
+    assert response.status_code == 400
+
+
+def test_decrypt_roundtrip_is_byte_for_byte():
+    original_bytes = b"\x89PNG\r\n\x1a\nsecret_image_data_byte_for_byte"
+    encrypted = client.post(
+        "/api/des-image/encrypt",
+        files={"file": ("secret.png", original_bytes, "image/png")},
+    )
+    assert encrypted.status_code == 200
+
+    decrypted = client.post("/api/des-image/decrypt", json=encrypted.json())
+    assert decrypted.status_code == 200
+    payload = decrypted.json()
+    assert payload["filename"] == "secret.png"
+    assert payload["content_type"] == "image/png"
+    assert base64.b64decode(payload["data_b64"], validate=True) == original_bytes
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["key_b64", "iv_b64", "ciphertext_b64"],
+)
+def test_decrypt_rejects_malformed_base64_strictly(field: str):
+    encrypted = client.post(
+        "/api/des-image/encrypt",
+        files={"file": ("test.png", b"\x89PNG\r\n\x1a\ncontent", "image/png")},
+    ).json()
+    encrypted[field] = "not-valid-base64!!!"
+
+    response = client.post("/api/des-image/decrypt", json=encrypted)
+    assert response.status_code == 400
+    response_text = response.text.lower()
+    assert "traceback" not in response_text
+    assert "valueerror" not in response_text
+
+
+def test_decrypt_rejects_invalid_mime_type():
+    encrypted = client.post(
+        "/api/des-image/encrypt",
+        files={"file": ("test.png", b"\x89PNG\r\n\x1a\ncontent", "image/png")},
+    ).json()
+    encrypted["content_type"] = "text/html"
+
+    response = client.post("/api/des-image/decrypt", json=encrypted)
+    assert response.status_code == 400
