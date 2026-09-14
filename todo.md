@@ -12,18 +12,28 @@
 - [x] إضافة `docs/19-v2-finalization.md` كمرجع للحالة الحالية وبوابات الإصدار.
 - [x] إزالة وصف “preview branch” القديم من router المجمع بدون تغيير السلوك.
 
-## المرحلة التالية المقترحة — Security parity + DES validation
+## مكتمل في مرحلة Security parity + DES validation
 
-- [ ] إعادة حماية محاولات Secret Code الخاطئة في Client Text API.
-- [ ] إعادة حماية محاولات Cancel Code الخاطئة في Client Text API.
-- [ ] إضافة اختبارات Rate Limit للمسارات الجديدة.
-- [ ] التحقق من Magic Bytes لصور PNG/JPEG قبل DES encryption.
-- [ ] إضافة اختبارات لرفض MIME مزيف أو signature غير صحيحة.
-- [ ] تشغيل pytest وTypeScript check وVite build وGitHub Actions.
+- [x] إعادة حماية محاولات Secret Code الخاطئة في Client Text API.
+- [x] إعادة حماية محاولات Cancel Code الخاطئة في Client Text API، بما فيها bucket عام داخل نسخة الخادم.
+- [x] إضافة اختبارات Rate Limit للمسارات الجديدة.
+- [x] التحقق من Magic Bytes لصور PNG/JPEG قبل DES encryption.
+- [x] إضافة اختبارات لرفض MIME مزيف أو signature غير صحيحة.
+- [x] تشغيل بوابة الجودة: `142 passed` في pytest، مع نجاح TypeScript check وVite production build على الفرع.
+- [x] تحديث `SECURITY.md` ليصف الحماية الحالية بدل اعتبارها عملاً مستقبليًا.
+
+## المرحلة التالية المقترحة — Legacy inventory + isolation
+
+- [ ] جرد كل Legacy API ومسار قديم وتحديد المستهلك الفعلي له.
+- [ ] فصل المسارات الحالية عن Server-side AES/RSA compatibility code بوضوح.
+- [ ] تحديد ما إذا كانت روابط V1 القديمة مطلوبة للتوافق قبل حذف أي كود.
+- [ ] عزل أو تعطيل Demo endpoints غير المستخدمة في التشغيل الفعلي.
+- [ ] تقييم إزالة اعتماد النظام الحالي على `ONESECRET_ENCRYPTION_KEY` إذا أصبح خاصًا بالـLegacy فقط.
+- [ ] إضافة اختبارات تثبت أن عزل Legacy لا يكسر Text/File/Image الحالية.
+- [ ] تشغيل pytest وTypeScript check وVite build وGitHub Actions قبل الدمج.
 
 ## مراحل لاحقة — لا تبدأ قبل اعتماد المرحلة السابقة
 
-- [ ] جرد وعزل Legacy APIs.
 - [ ] إضافة اختبارات Frontend Web Crypto.
 - [ ] تنظيف dependencies وتثبيت إصدارات البيئة المدعومة.
 - [ ] مراجعة migrations وتنظيف البيانات المنتهية.
