@@ -1,152 +1,167 @@
 # OneSecret
 
-> **منصة ويب ثنائية اللغة لمشاركة رسالة نصية حساسة برابط زمني قصير، مع تشفير أثناء التخزين وخيارات وصول واضحة.**
+> منصة تعليمية لتطبيق مفاهيم التشفير على مشاركة **النصوص والملفات والصور** داخل تطبيق ويب واحد.
 
-[![الواجهة: React](https://img.shields.io/badge/Frontend-React%2019-61DAFB?logo=react&logoColor=white)](./frontend) [![الخادم: FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi&logoColor=white)](./backend) [![اللغة: Python](https://img.shields.io/badge/Language-Python%203.12-3776AB?logo=python&logoColor=white)](./backend) [![TypeScript](https://img.shields.io/badge/Language-TypeScript-3178C6?logo=typescript&logoColor=white)](./frontend) [![قاعدة البيانات](https://img.shields.io/badge/Data-SQLAlchemy-CA504B?logo=sqlalchemy&logoColor=white)](./backend/app/models.py) [![التشفير](https://img.shields.io/badge/Cryptography-AES--256--GCM-172B44)](./backend/app/crypto.py)
+## حالة المشروع
 
-**OneSecret** منصة تركز على مشكلة صغيرة وواضحة: مشاركة معلومة لا ينبغي أن تبقى متاحة إلى الأبد، مثل رمز دخول مؤقت أو كلمة مرور لمرة واحدة أو ملاحظة خاصة. يكتب المرسل الرسالة، يحدد مدة الرابط، ثم يشارك رابطًا قصيرًا مع المستلم. لا تُحفظ الرسالة كنص مقروء في قاعدة البيانات.
+الفرع `main` يحتوي حاليًا على المعمارية المرشحة للإصدار الكبير التالي من OneSecret. آخر إصدار منشور ما زال `v1.2.1`، لذلك لا نغيّر رقم الإصدار إلى `2.0.0` قبل إكمال التنظيف الأمني والتوثيق والاختبارات النهائية.
 
-## لقطات من التطبيق
+التقنيات الأساسية:
 
-**واجهة إنشاء الرسالة**
+- Frontend: React + TypeScript + Tailwind CSS + Vite.
+- Backend: Python + FastAPI + SQLAlchemy.
+- Text: AES-256-GCM عبر Web Crypto داخل المتصفح.
+- Files: AES-256-GCM + RSA-OAEP/SHA-256 عبر Web Crypto داخل المتصفح.
+- Images: Single DES-CBC + PKCS#7 داخل Backend لأغراض تعليمية.
 
-![واجهة إنشاء رسالة عربية في OneSecret](https://files.manuscdn.com/user_upload_by_module/session_file/310419663031651313/lSMqltWkBtvdtUte.webp)
+## خريطة التشفير الحالية
 
-**واجهة المستلم بعد الكشف التلقائي**
+| نوع البيانات | الخوارزمية | مكان التشفير | ما يصل إلى الخادم | مادة فك التشفير |
+|---|---|---|---|---|
+| النص | AES-256-GCM | المتصفح | `ciphertext + nonce + metadata` | مفتاح AES داخل URL Fragment `#k=` |
+| الملف | AES-256-GCM + RSA-OAEP/SHA-256 | المتصفح | encrypted file envelope فقط | RSA private key + claim token داخل URL Fragment |
+| الصورة | Single DES-CBC + PKCS#7 | Backend | الصورة الأصلية تصل إلى API ثم تُشفّر | مفتاح DES يعاد للواجهة ولا يُحفظ في قاعدة البيانات |
 
-![واجهة عرض رسالة اختبارية عربية في OneSecret](https://files.manuscdn.com/user_upload_by_module/session_file/310419663031651313/pKYyhzeMoxQgBqvs.webp)
+### النصوص
 
-> اللقطتان من تشغيل فعلي للتطبيق وتعرضان بيانات اختبار غير حساسة فقط.
+عند إنشاء رسالة، يولد المتصفح مفتاح AES عشوائيًا بطول 32 بايت وNonce بطول 12 بايت، ثم يشفر النص باستخدام AES-256-GCM قبل أول طلب شبكة. الخادم يخزن الحزمة المشفرة ولا يحتاج إلى مفتاح AES. رابط المشاركة يحمل المفتاح داخل الجزء الذي يلي `#`، وهذا الجزء لا يرسله المتصفح تلقائيًا في طلب HTTP العادي.
 
-## الفكرة والقيمة
+### الملفات
 
-ليست الفكرة «دردشة جديدة»، ولا بديلًا عن تطبيقات التواصل. هي أداة مستقلة لرسالة لها **مدة واضحة** وسلوك وصول محدد. يرسل الشخص الرابط عبر القناة التي يفضلها، ويفتحه المستلم ليقرأ الرسالة خلال الفترة التي اختارها المرسل.
+الملف لا يُشفّر مباشرةً بـRSA. ينشئ المتصفح مفتاح AES-256 عشوائيًا ويستخدمه لتشفير محتوى الملف بـAES-GCM، ثم يشفر مفتاح AES نفسه باستخدام RSA-OAEP/SHA-256 ومفتاح RSA عام مولد للعملية. المفتاح الخاص RSA يبقى داخل رابط المشاركة. باختصار:
 
-| الحاجة الواقعية | كيف يعالجها OneSecret |
-|---|---|
-| إرسال رمز أو كلمة مرور مؤقتة | يحدد المرسل عمر الرابط من دقيقة إلى 24 ساعة |
-| تقليل خطر حفظ النص المقروء في قاعدة البيانات | يشفّر الخادم النص بـ AES-256-GCM ويحفظ `ciphertext` بدل `plaintext` |
-| السماح بالعودة إلى الرسالة عند الحاجة | الرابط يعمل عدة مرات حتى وقت الانتهاء افتراضيًا |
-| جعل الرسالة لمرة واحدة عند الحاجة | خيار صريح: «إتلاف بعد أول فتح» ينفذ ذريًا في الخادم |
-| إضافة طبقة معرفة مشتركة | Secret Code اختياري يمر في جسم `POST` ولا يدخل الرابط أو التخزين كنص أصلي |
-| إلغاء رابط وصل إلى جهة غير مقصودة | رمز إلغاء خاص بالمرسل يعطل الرابط ويمسح مواده الحساسة عند النجاح |
-| تقليل التخمين والإساءة | حدود طلبات للإنشاء والكشف ومحاولات Secret Code الخاطئة |
+> **AES يشفر الملف، وRSA يحمي مفتاح AES.**
 
-## الوعد الأمني بدقة
+### الصور
 
-OneSecret يتبع نموذج **خادم موثوق**. يرى خادم Python النص لحظيًا لتشفيره عند الإنشاء وفكه عند الكشف، لكنه لا يحفظ النص الأصلي أو مفتاح AES في قاعدة البيانات. لا يقدّم المشروع تشفيرًا طرفًا إلى طرف، ولا يدّعي منع نسخ النص أو تصوير الشاشة بعد عرضه.
+مسار الصور مختلف عمدًا: يتم إرسال الصورة الأصلية إلى Backend، وتُعامل كبايتات ثم تُشفّر باستخدام Single DES في وضع CBC مع PKCS#7. الخادم يخزن الحزمة المشفرة مؤقتًا، بينما مفتاح DES لا يُحفظ في قاعدة البيانات ويكون داخل رابط المشاركة.
 
-| ما يحميه المشروع | ما لا يستطيع ضمانه |
-|---|---|
-| تشفير المحتوى في قاعدة البيانات باستخدام AES-256-GCM والتحقق من العبث [1] | جهاز المستلم المصاب أو لقطة الشاشة أو نسخ النص بعد عرضه |
-| Secret Code ورمز الإلغاء مشتقان بـ scrypt مع salt عشوائي، من دون حفظ النص الأصلي | حذف نص أو لقطة شاشة وصلت إلى مستلم قبل نجاح الإلغاء |
-| انتهاء الرابط عند `expires_at`، وإتلاف اختياري بعد أول فتح | حذف نسخ خارج النظام أو من ذاكرة جهاز المستخدم |
-| `no-store` لصفحات الرابط ونتائج الكشف، مع رؤوس متصفح تقلل التخزين والتضمين غير اللازم [2] | جعل الرابط العام غير قابل للنسخ أو التنزيل |
-| رسائل خطأ عامة وحدود محاولات للتحقق من الأسرار [2] [3] | حد موحد بين عدة نسخ خادم أو بعد إعادة تشغيله في الإصدار الحالي |
+> DES خوارزمية قديمة وغير مناسبة كنظام تشفير حديث. وجودها في OneSecret تعليمي لتطبيق ما دُرس في المقرر، ولا يُعرض المشروع على أنها بديل أمني حديث لـAES.
+
+## حدود الثقة بدقة
+
+لا نستخدم وصفًا عامًا مثل “Zero Knowledge” للمشروع كله لأن هذا سيكون غير دقيق.
+
+- **Text:** الخادم لا يحتاج plaintext ولا مفتاح AES في المسار الحالي.
+- **Files:** الخادم لا يحتاج bytes الملف الأصلية ولا RSA private key في المسار الحالي.
+- **Images:** Backend يرى bytes الصورة الأصلية أثناء تشفير DES.
+- HTTPS يظل مطلوبًا لحماية النقل والـmetadata والطلبات نفسها.
+- من يملك رابطًا كاملًا يحتوي مادة فك التشفير يستطيع استخدامه ضمن صلاحية المشاركة.
+- النظام لا يستطيع منع المستلم من نسخ المحتوى أو تصويره بعد فك التشفير.
+
+راجع [`SECURITY.md`](./SECURITY.md) للنموذج الأمني والقيود التشغيلية.
 
 ## المعمارية
 
-تنقسم المنصة إلى ثلاث طبقات صغيرة ومباشرة، لكل منها مسؤولية واضحة وحدود محددة.
-
 ```mermaid
 flowchart LR
-    A["المرسل أو المستلم"] --> B["React + TypeScript\nواجهة عربية / إنجليزية"]
-    B -->|"POST /api/secrets"| C["FastAPI\nالتحقق وAES-256-GCM"]
-    B -->|"POST /reveal"| C
-    C --> D["SQLAlchemy\nقاعدة بيانات"]
+    U[User] --> F[React + TypeScript]
+    F --> WC[Web Crypto API]
+    WC -->|Text: AES-GCM| API[FastAPI]
+    WC -->|File: AES-GCM + RSA-OAEP| API
+    F -->|Image bytes| DES[Backend DES-CBC]
+    DES --> API
+    API --> DB[(SQLAlchemy Database)]
 ```
 
-| الطبقة | المسؤولية | الملفات الأساسية |
-|---|---|---|
-| الواجهة | إدخال الرسالة، اختيار المدة، المشاركة الأصلية للهاتف، وعرض حالات الرابط | `frontend/src/pages/` و`frontend/src/lib/` |
-| خادم Python | التشفير وفك التشفير، دورة حياة السر، Secret Code، وحدود الطلبات والرؤوس | `backend/app/` |
-| البيانات | تعريف نموذج السر وجلسات SQLAlchemy | `backend/app/models.py` و`backend/app/database.py` |
+المسارات الأساسية في الواجهة:
 
-## دورة حياة الرسالة
-
-```mermaid
-sequenceDiagram
-    participant S as المرسل
-    participant W as واجهة React
-    participant A as FastAPI
-    participant D as قاعدة البيانات
-    participant R as المستلم
-
-    S->>W: يكتب النص ويختار المدة
-    W->>A: POST /api/secrets
-    A->>A: تحقق وتشفير AES-256-GCM
-    A->>D: حفظ بيانات مشفرة فقط
-    A-->>W: معرّف رابط عشوائي
-    W-->>S: /s/{id}
-    R->>W: يفتح الرابط
-    W->>A: POST /api/secrets/{id}/reveal
-    A->>D: تحقق من الوقت والكود والإتلاف
-    A-->>W: النص عند السماح فقط
+```text
+/                  إنشاء نص مشفر
+/s/{id}            استقبال النص
+/rsa-file          إرسال ملف Hybrid
+/f/{id}            استقبال الملف
+/des-image         إرسال صورة DES
+/i/{id}            استقبال الصورة
+/cancel            إلغاء مشاركة نص عند توفر رمز الإلغاء
 ```
 
-## الإصدار الحالي: V1.2.1
+الملفات الأساسية:
 
-أضاف الإصدار **V1.2.0** قدرة إلغاء الرابط من المرسل من دون حساب أو جلسة. عند إنشاء الرسالة يعيد الخادم رمز إلغاء عشوائيًا للمرسل مرة واحدة فقط. يُحفظ منه salt واشتقاق `scrypt` فقط، ويُستخدم لاحقًا في صفحة `/cancel` لتعطيل الرابط ذريًا ومسح مواد الرسالة. لا يدخل الرمز في الرابط أو السجلات أو حالة الرابط، ولا يستطيع الإلغاء إزالة نسخة وصل إليها المستلم قبل نجاحه.
+```text
+frontend/src/lib/browser-crypto.ts        Web Crypto للنصوص والملفات
+frontend/src/lib/client-crypto-api.ts     API للحزم المشفرة
+frontend/src/pages/CreateSecretPage.tsx   إنشاء النص
+frontend/src/pages/RevealSecretPage.tsx   استقبال النص
+frontend/src/pages/RsaFilePage.tsx        إرسال الملفات Hybrid
+frontend/src/pages/RsaFileReceivePage.tsx استقبال الملفات
+frontend/src/pages/DesImagePage.tsx       إرسال الصور
+frontend/src/pages/DesImageReceivePage.tsx استقبال الصور
 
-يحسن الإصدار **V1.2.1** ذلك التدفق برمز إلغاء مكوّن من خمسة رموز واضحة غير ملتبسة، مثل `A7K2Z`، مع قبول الأحرف الصغيرة بعد تطبيعها. كما يبقي نموذج «إلغاء رابط موجود» ظاهرًا أسفل صفحة الإرسال. الرمز المختصر ليس مفتاحًا تشفيريًا؛ لذلك تحميه حدود محاولات خاطئة خاصة به داخل نسخة الخادم.
+backend/app/client_crypto_core.py         نماذج وتحقق للحزم المشفرة
+backend/app/client_crypto_text_api.py     مشاركة النص المشفر
+backend/app/client_crypto_file_api.py     مشاركة الملف المشفر
+backend/app/des_image_api.py              مسار الصور DES
+backend/app/crypto_des.py                 منطق DES الخام
+backend/app/main.py                       نقطة تشغيل FastAPI
+```
 
-| مجال التحصين | التنفيذ |
-|---|---|
-| إنشاء الرسائل | 6 طلبات خلال 10 دقائق لكل مصدر اتصال |
-| Reveal | 60 طلبًا خلال دقيقة لكل مصدر اتصال |
-| Secret Code الخاطئ | 5 محاولات خلال 10 دقائق لكل مصدر ولكل رسالة |
-| مفاتيح ذاكرة المحدد | بصمات HMAC للنطاق والمصدر؛ لا تحفظ `secret_id` أو المصدر خامًا |
-| تنظيف الذاكرة | حذف المفاتيح المنتهية دوريًا بدل تراكمها |
-| رد الحظر | `429` مع `Retry-After` ورسالة واجهة عربية/إنجليزية عامة |
-| منع التخزين | `Cache-Control: no-store` لمسار الرابط، وحالة الرابط، وكل نتائج Reveal الحساسة |
-| سجل التشغيل | تعطيل سجل الوصول الافتراضي في تشغيل الإنتاج، مع حدث حظر مختصر خالٍ من المحتوى |
-| رمز الإلغاء | خمسة رموز عشوائية غير ملتبسة، تعرض مرة واحدة وتُخزن مشتقة فقط |
-| الإلغاء | `POST` بجسم طلب، تحديث ذري، ومسح بيانات التشفير وSecret Code ومواد الإلغاء |
-| حماية الرمز القصير | 3 محاولات خاطئة لكل مصدر و5 لكل رابط خلال 15 دقيقة داخل نسخة الخادم |
-| الرابط الملغى | كشف وحالة عامة غير متاحة للمستلم، مع `no-store` وحدود محاولات |
+توجد كذلك مسارات Server-side أقدم للتوافق مع روابط سابقة. هي ليست المعمارية التي يجب استخدامها لشرح المسارات الجديدة، وسيتم تقييمها وعزلها أو حذفها في مرحلة تنظيف لاحقة قبل إصدار V2.
 
-تفاصيل التحصين وقيوده التشغيلية موجودة في [`docs/13-v1-1-hardening-design.md`](./docs/13-v1-1-hardening-design.md)، ويوثق [`docs/16-v1-2-cancellation-design.md`](./docs/16-v1-2-cancellation-design.md) عقد الإلغاء وحدوده واختباراته.
+## التشغيل المحلي
 
-## الجودة والتحقق
+### المتطلبات المعتمدة حاليًا
 
-تغطي الاختبارات السلوك الأساسي وحالات الخطأ والتحصين التشغيلي وإلغاء الرابط. النتائج الحالية موثقة في V1.2.
+- Python 3.12 هو الإصدار الذي تختبره GitHub Actions حاليًا.
+- Node.js 22.
+- pnpm 10.
+- SQLite للتطوير المحلي، وMySQL/TiDB متاحان للتشغيل الفعلي.
 
-| الأمر | ما الذي يتحقق منه | آخر نتيجة |
-|---|---|---|
-| `cd backend && pytest -q` | التشفير، دورة حياة السر، الصلاحية، Secret Code، الإلغاء الذري، التزامن، الحدود والرؤوس | **83 passed** |
-| `cd frontend && pnpm check` | صحة أنواع TypeScript | ناجح |
-| `cd frontend && pnpm build` | بناء واجهة الإنتاج Vite | ناجح |
-| فحص HTTP ومتصفح | حالات الإلغاء الصحيح والخاطئ و`200` و`401` و`410` و`429`، رؤوس الحماية، وسجل تشغيل آمن | ناجح |
+### Windows CMD — Backend
 
-كما تحتوي المستودع على بوابة GitHub Actions في [`.github/workflows/quality.yml`](./.github/workflows/quality.yml) لفحص الواجهة وخادم Python عند كل push أو pull request.
+```cmd
+cd /d "D:\4-th\التشفير وأمنية المعلومات\المشروع\OneSecret\backend"
+python -m venv .venv
+.venv\Scripts\activate
+python -m pip install -r requirements.txt
 
-## التشغيل محليًا
+for /f "delims=" %K in ('python generate_key.py') do set "ONESECRET_ENCRYPTION_KEY=%K"
+set "DATABASE_URL=sqlite:///./onesecret-dev.db"
+set "ONESECRET_REQUIRE_CONFIGURATION=true"
 
-### المتطلبات
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8001 --no-access-log
+```
 
-| الأداة | النسخة المقترحة |
-|---|---:|
-| Python | 3.12 أو أحدث ضمن 3.x |
-| Node.js | 22 |
-| pnpm | 10 |
-| قاعدة البيانات | SQLite للتطوير والاختبارات، وMySQL/TiDB للتشغيل الفعلي |
+> عند التشغيل المعتاد لا تولد مفتاح `ONESECRET_ENCRYPTION_KEY` جديدًا كل مرة إذا كانت لديك بيانات Legacy تحتاج فكها. احفظ المفتاح محليًا خارج Git وأعد استخدامه. الحاجة الحالية لهذا المفتاح سببها طبقة التوافق القديمة Server-side؛ مسارا Text وFiles الجديدان لا يرسلان مفاتيح فك المحتوى إلى Backend.
 
-### 1. تشغيل خادم Python
+اختبار الصحة:
+
+```text
+http://127.0.0.1:8001/api/health
+```
+
+والنتيجة المتوقعة بعد نجاح التهيئة:
+
+```json
+{"status":"ok"}
+```
+
+### Windows CMD — Frontend
+
+افتح Terminal جديدًا:
+
+```cmd
+cd /d "D:\4-th\التشفير وأمنية المعلومات\المشروع\OneSecret\frontend"
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+يفتح Vite عادةً على `http://localhost:5173` ويمرر `/api` إلى FastAPI على المنفذ 8001.
+
+### Linux / macOS — Backend
 
 ```bash
 cd backend
-python3 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-
-# اطبع مفتاح AES-256 جديدًا محليًا واحفظه خارج المستودع.
+python -m pip install -r requirements.txt
 export ONESECRET_ENCRYPTION_KEY="$(python generate_key.py)"
 export DATABASE_URL="sqlite:///./onesecret-dev.db"
-
-uvicorn app.main:app --reload --port 8001 --no-access-log
+export ONESECRET_REQUIRE_CONFIGURATION=true
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8001 --no-access-log
 ```
 
-### 2. تشغيل واجهة React
+### Linux / macOS — Frontend
 
 ```bash
 cd frontend
@@ -154,68 +169,49 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-بعد ذلك افتح الرابط الذي تعرضه Vite. تمرّر بيئة التطوير طلبات `/api` إلى خادم FastAPI على المنفذ `8001`.
+## الاختبارات والجودة
 
-> لا تضع `ONESECRET_ENCRYPTION_KEY` أو أي قيمة اعتماد في ملف متتبع داخل Git أو لقطة شاشة أو issue عام.
+Backend:
+
+```bash
+cd backend
+pytest -q
+```
+
+Frontend:
+
+```bash
+cd frontend
+pnpm check
+pnpm build
+```
+
+GitHub Actions تنفذ بوابة الجودة على `push` و`pull_request`. التشفير داخل المتصفح أصبح جزءًا أساسيًا من النظام؛ لذلك ستضيف مرحلة نهائية لاحقة اختبارات Frontend مباشرة لـWeb Crypto بدل الاعتماد على TypeScript/build فقط.
 
 ## بنية المستودع
 
 ```text
 OneSecret/
-├── frontend/               # React + TypeScript + Tailwind + Vite
-│   └── src/
-│       ├── pages/          # CreateSecretPage وRevealSecretPage
-│       └── lib/            # API وi18n ومخزن منع الطلب المكرر
-├── backend/                # FastAPI + SQLAlchemy + cryptography
-│   ├── app/                # منطق التشفير والأسرار والـAPI والحماية
-│   └── tests/              # اختبارات pytest
-├── docs/                   # توثيق كل مرحلة وقراراتها
-├── .github/workflows/      # بوابة الجودة العامة
-└── todo.md                 # سجل التنفيذ ومعايير القبول
+├── frontend/               React + TypeScript + Web Crypto
+├── backend/                FastAPI + SQLAlchemy + DES/compatibility
+├── docs/                   التوثيق الحالي + وثائق تاريخية للمراحل السابقة
+├── .github/workflows/      بوابة الجودة
+├── SECURITY.md             حدود الثقة والأمان
+├── CONTRIBUTING.md         قواعد التعديل والمساهمة
+└── PROJECT_PLAN.md         خطة تثبيت V2 قبل الإصدار
 ```
 
-## التوثيق التقني
+## التوثيق
 
-يوثق مجلد [`docs/`](./docs) البيئة وقاعدة البيانات وAES-GCM ومسارات API وواجهات المستخدم والنشر والتدقيق والصلاحية وSecret Code وتحسينات V1.1. يربط كل قرار تقني بنطاقه واختباراته وقيوده التشغيلية.
+ابدأ من:
 
-| الوثيقة | التركيز |
-|---|---|
-| [`docs/03-crypto.md`](./docs/03-crypto.md) | تطبيق AES-256-GCM والـNonce والتحقق من العبث |
-| [`docs/04-api-lifecycle.md`](./docs/04-api-lifecycle.md) | إنشاء السر وReveal وحالات الانتهاء والإتلاف الذري |
-| [`docs/11-expiry-secret-code-design.md`](./docs/11-expiry-secret-code-design.md) | العرض المتكرر حتى الانتهاء وSecret Code الاختياري |
-| [`docs/13-v1-1-hardening-design.md`](./docs/13-v1-1-hardening-design.md) | حدود الطلبات والرؤوس والسجل الآمن وقيود التشغيل |
-| [`docs/14-github-publication.md`](./docs/14-github-publication.md) | المستودع العام والإصدارات وبوابة الجودة ومراجعة README |
-| [`docs/15-v1-1-1-release.md`](./docs/15-v1-1-1-release.md) | نطاق إصدار V1.1.1 وفحوصه والتغييرات غير الوظيفية |
-| [`docs/16-v1-2-cancellation-design.md`](./docs/16-v1-2-cancellation-design.md) | رمز الإلغاء والإلغاء الذري وعقود API والحدود والاختبارات |
-| [`docs/17-v1-2-1-short-cancellation-code.md`](./docs/17-v1-2-1-short-cancellation-code.md) | قرار رمز الإلغاء المختصر ومدخل الإلغاء الدائم وحدود محاولاته |
+- [`docs/README.md`](./docs/README.md) — خريطة التوثيق وما هو حالي وما هو تاريخي.
+- [`docs/19-v2-finalization.md`](./docs/19-v2-finalization.md) — لقطة المعمارية الحالية وخطة التثبيت.
+- [`SECURITY.md`](./SECURITY.md) — نموذج الأمان وحدود الثقة.
+- [`CHANGELOG.md`](./CHANGELOG.md) — الإصدارات المنشورة السابقة.
 
-راجع [`CHANGELOG.md`](./CHANGELOG.md) لتفاصيل ما دخل كل إصدار منشور.
+## ملاحظة عن الإصدار
 
-## خارطة الطريق
+لا يُنشأ Tag أو Release باسم `v2.0.0` قبل اجتياز مراحل التثبيت التالية: نقل حماية التخمين إلى Client Crypto، تشديد تحقق صور DES، تقرير مصير Legacy APIs، إضافة اختبارات Web Crypto، تنظيف الاعتماديات والتوثيق، ثم نجاح CI النهائي.
 
-| المرحلة | القرار |
-|---|---|
-| V1.0 | الرسائل النصية المؤقتة، AES-256-GCM، الصلاحية، الإتلاف الاختياري، Secret Code، وتجربة الهاتف |
-| V1.1 | تحصين تشغيلي مكتمل: حدود إساءة الاستخدام وسجل آمن ورؤوس متصفح |
-| V1.1.1 | صيانة موثقة: بوابة جودة مستقرة وREADME تقني محايد بلا تغيير وظيفي |
-| V1.2 | مكتملة: إلغاء الرابط من المرسل برمز إلغاء منفصل ومشتق آمنًا |
-| V1.3 | صورة مؤقتة واحدة بنطاق منفصل بعد V1.2، مع تحقق النوع والحجم وإزالة EXIF |
-
-لا تدخل الحسابات أو المحادثات أو الذكاء الاصطناعي أو رفع الملفات العامة ضمن النطاق الحالي؛ لأنها ستزيد التعقيد ولا تحل المشكلة الأساسية للمرحلة الحالية.
-
-## المساهمة والإبلاغ الآمن
-
-المشروع معروض للمراجعة التقنية. لا تضع رسالة حقيقية أو Secret Code أو مفتاحًا أو رابطًا صالحًا في issue أو pull request. عند اكتشاف مشكلة أمنية، اكتفِ بوصف غير حساس وخطوات إعادة إنتاج تستخدم بيانات اختبار، وراجع [`SECURITY.md`](./SECURITY.md) قبل الإبلاغ.
-
-## حقوق الاستخدام
-
-هذا المستودع **عام للعرض والتقييم التقني**، لكنه لا يرفق رخصة مفتوحة. لا يمنح ذلك تلقائيًا إذنًا لإعادة استخدام الشيفرة أو توزيعها أو إنشاء عمل مشتق منها؛ فالحقوق الافتراضية تبقى لصاحبها عند غياب رخصة مفتوحة [4]. العلنية لا تمنع الاطلاع أو الـfork أو الـclone وفق قواعد GitHub، لذلك لا ينبغي وضع أسرار أو بيانات فعلية في أي commit عام.
-
-**صاحب المشروع:** Alhareith Aldahia
-
-## المراجع
-
-[1]: https://cryptography.io/en/latest/hazmat/primitives/aead/ "توثيق cryptography الرسمي: AESGCM والتحقق من النزاهة"
-[2]: https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html "OWASP REST Security Cheat Sheet"
-[3]: https://pages.nist.gov/800-63-4/sp800-63b.html "NIST SP 800-63B"
-[4]: https://docs.github.com/articles/licensing-a-repository "GitHub Docs: Licensing a repository"
+**OneSecret = Encrypt → Share → Recover**

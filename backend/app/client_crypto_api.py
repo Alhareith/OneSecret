@@ -1,8 +1,8 @@
-"""Aggregate browser-encrypted APIs and the DES image API for the full preview branch.
+"""Aggregate the current OneSecret sharing routers.
 
 Text and general-file payloads are encrypted in the browser before reaching the
-server. DES images remain the separate educational DES-CBC path implemented by
-Mulatef.
+server. DES images remain a separate educational backend-side DES-CBC path, so
+the server receives the original image bytes for that path before encryption.
 """
 
 from fastapi import APIRouter
