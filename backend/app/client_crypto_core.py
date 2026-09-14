@@ -104,12 +104,27 @@ def valid_claim_token(expected_hash: str, submitted: str) -> bool:
     return hmac.compare_digest(expected_hash, token_hash(submitted))
 
 
-def enforce_rate_limit(request: Request, *, scope: str, policy: RateLimit) -> None:
+def enforce_rate_limit(
+    request: Request,
+    *,
+    scope: str,
+    policy: RateLimit,
+    consume: bool = True,
+    source: str | None = None,
+) -> None:
+    """Apply a rate-limit bucket, optionally checking it without consuming an event."""
+
     limiter: RequestRateLimiter | None = getattr(request.app.state, "rate_limiter", None)
     if limiter is None:
         return
-    source = request.client.host if request.client is not None else "unknown"
-    retry_after = limiter.consume(scope=scope, source=source, policy=policy)
+    bucket_source = source if source is not None else (
+        request.client.host if request.client is not None else "unknown"
+    )
+    retry_after = (
+        limiter.consume(scope=scope, source=bucket_source, policy=policy)
+        if consume
+        else limiter.retry_after(scope=scope, source=bucket_source, policy=policy)
+    )
     if retry_after is not None:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
