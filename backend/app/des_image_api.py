@@ -129,6 +129,14 @@ def _get_session(request: Request) -> Iterator[Session]:
         session.close()
 
 
+def _has_expected_signature(data: bytes, content_type: str) -> bool:
+    if content_type == "image/png":
+        return data.startswith(b"\x89PNG\r\n\x1a\n")
+    if content_type == "image/jpeg":
+        return data.startswith(b"\xff\xd8\xff")
+    return False
+
+
 async def _read_valid_image(file: UploadFile) -> bytes:
     if file.content_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(
@@ -141,15 +149,12 @@ async def _read_valid_image(file: UploadFile) -> bytes:
         raise HTTPException(status_code=400, detail="File is empty.")
     if len(file_bytes) > MAX_IMAGE_BYTES:
         raise HTTPException(status_code=400, detail="File size exceeds the 5 MiB limit.")
+    if not _has_expected_signature(file_bytes, file.content_type):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Image content does not match the declared PNG/JPEG type.",
+        )
     return file_bytes
-
-
-def _has_expected_signature(data: bytes, content_type: str) -> bool:
-    if content_type == "image/png":
-        return data.startswith(b"\x89PNG\r\n\x1a\n")
-    if content_type == "image/jpeg":
-        return data.startswith(b"\xff\xd8\xff")
-    return False
 
 
 def _get_active_share(session: Session, share_id: str) -> DesImageShare:
