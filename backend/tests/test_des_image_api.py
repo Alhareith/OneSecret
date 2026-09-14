@@ -64,6 +64,21 @@ def test_encrypt_rejects_invalid_content_type():
     assert response.status_code == 400
 
 
+@pytest.mark.parametrize(
+    ("filename", "content_type", "fake_bytes"),
+    [
+        ("fake.png", "image/png", b"this-is-not-a-png"),
+        ("fake.jpg", "image/jpeg", b"this-is-not-a-jpeg"),
+    ],
+)
+def test_encrypt_rejects_spoofed_image_content_type(filename, content_type, fake_bytes):
+    response = client.post(
+        "/api/des-image/encrypt",
+        files={"file": (filename, fake_bytes, content_type)},
+    )
+    assert response.status_code == 400
+
+
 def test_encrypt_rejects_file_over_limit():
     response = client.post(
         "/api/des-image/encrypt",
@@ -128,6 +143,16 @@ def test_share_creates_link_package_without_storing_key(share_client):
     assert info.status_code == 200
     assert "ciphertext" not in info.json()
     assert "key" not in info.json()
+
+
+def test_share_rejects_spoofed_jpeg_before_encryption(share_client):
+    configured, _ = share_client
+    response = configured.post(
+        "/api/des-image/share",
+        files={"file": ("fake.jpg", b"plain-text-disguised-as-jpeg", "image/jpeg")},
+        data={"expires_minutes": "15"},
+    )
+    assert response.status_code == 400
 
 
 def test_share_wrong_key_does_not_consume_then_correct_key_is_one_time(share_client):

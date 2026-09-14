@@ -26,7 +26,14 @@ from app.client_crypto_core import (
     strict_b64decode,
     utc_now,
 )
-from app.rate_limit import CANCEL_LIMIT, CREATE_SECRET_LIMIT, REVEAL_LIMIT
+from app.rate_limit import (
+    CANCEL_LIMIT,
+    CREATE_SECRET_LIMIT,
+    FAILED_CANCEL_CODE_GLOBAL_LIMIT,
+    FAILED_CANCEL_CODE_LIMIT,
+    FAILED_CODE_LIMIT,
+    REVEAL_LIMIT,
+)
 from app.secret_code import create_secret_code_material, verify_secret_code
 
 router = APIRouter()
@@ -139,10 +146,32 @@ def reveal_client_text(
     enforce_rate_limit(request, scope="client-text-reveal", policy=REVEAL_LIMIT)
     share = get_active_text(session, share_id)
     submitted = payload.secret_code if payload else None
+
+    if submitted is not None:
+        enforce_rate_limit(
+            request,
+            scope=f"client-text-secret-code:{share_id}",
+            policy=FAILED_CODE_LIMIT,
+            consume=False,
+        )
+
     if share.secret_code_hash is not None:
-        if submitted is None or share.secret_code_salt is None or not verify_secret_code(
-            submitted, salt=share.secret_code_salt, expected_hash=share.secret_code_hash
-        ):
+        valid_code = (
+            submitted is not None
+            and share.secret_code_salt is not None
+            and verify_secret_code(
+                submitted,
+                salt=share.secret_code_salt,
+                expected_hash=share.secret_code_hash,
+            )
+        )
+        if not valid_code:
+            if submitted is not None:
+                enforce_rate_limit(
+                    request,
+                    scope=f"client-text-secret-code:{share_id}",
+                    policy=FAILED_CODE_LIMIT,
+                )
             raise HTTPException(status_code=401, detail="Secret code is required or invalid")
 
     ciphertext = bytes(share.ciphertext or b"")
@@ -176,21 +205,46 @@ def cancel_client_text(
     session: Session = Depends(get_session),
 ) -> ClientTextCancelResponse:
     enforce_rate_limit(request, scope="client-text-cancel", policy=CANCEL_LIMIT)
+    enforce_rate_limit(
+        request,
+        scope=f"client-text-cancel-code:{share_id}",
+        policy=FAILED_CANCEL_CODE_LIMIT,
+        consume=False,
+    )
+    enforce_rate_limit(
+        request,
+        scope=f"client-text-cancel-code-global:{share_id}",
+        policy=FAILED_CANCEL_CODE_GLOBAL_LIMIT,
+        consume=False,
+        source="all-sources",
+    )
+
     share = session.get(ClientTextShare, share_id)
-    if share is None:
-        raise HTTPException(status_code=404, detail="Secret not found")
-    if (
-        share.used_at is not None
-        or share.cancelled_at is not None
-        or share.expires_at <= utc_now()
-        or share.cancel_code_salt is None
-        or share.cancel_code_hash is None
-        or not verify_secret_code(
+    valid_cancel = (
+        share is not None
+        and share.used_at is None
+        and share.cancelled_at is None
+        and share.expires_at > utc_now()
+        and share.cancel_code_salt is not None
+        and share.cancel_code_hash is not None
+        and verify_secret_code(
             payload.cancel_code,
             salt=share.cancel_code_salt,
             expected_hash=share.cancel_code_hash,
         )
-    ):
+    )
+    if not valid_cancel:
+        enforce_rate_limit(
+            request,
+            scope=f"client-text-cancel-code:{share_id}",
+            policy=FAILED_CANCEL_CODE_LIMIT,
+        )
+        enforce_rate_limit(
+            request,
+            scope=f"client-text-cancel-code-global:{share_id}",
+            policy=FAILED_CANCEL_CODE_GLOBAL_LIMIT,
+            source="all-sources",
+        )
         raise HTTPException(status_code=410, detail="Secret is unavailable")
 
     current = utc_now()

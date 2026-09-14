@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.client_crypto_api import ClientFileShare, ClientTextShare, router
 from app.database import Base, build_engine, build_session_factory
+from app.rate_limit import FAILED_CANCEL_CODE_GLOBAL_LIMIT, RequestRateLimiter
 
 
 @pytest.fixture()
@@ -18,6 +19,7 @@ def configured(tmp_path: Path):
     factory = build_session_factory(engine)
     app = FastAPI()
     app.state.session_factory = factory
+    app.state.rate_limiter = RequestRateLimiter()
     app.include_router(router)
     with TestClient(app) as client:
         yield client, factory
@@ -87,6 +89,27 @@ def test_text_secret_code_and_destroy_on_open(configured):
     assert client.post(f"/api/client-crypto/text/{'b'*48}/reveal", json={"secret_code": "correct-pass"}).status_code == 410
 
 
+def test_text_secret_code_failed_attempts_are_rate_limited(configured):
+    client, _ = configured
+    secret_id = "e" * 48
+    payload = text_payload(secret_id=secret_id, code="correct-password")
+    assert client.post("/api/client-crypto/text", json=payload).status_code == 201
+
+    for _ in range(5):
+        wrong = client.post(
+            f"/api/client-crypto/text/{secret_id}/reveal",
+            json={"secret_code": "wrong-password"},
+        )
+        assert wrong.status_code == 401
+
+    blocked = client.post(
+        f"/api/client-crypto/text/{secret_id}/reveal",
+        json={"secret_code": "correct-password"},
+    )
+    assert blocked.status_code == 429
+    assert int(blocked.headers["Retry-After"]) >= 1
+
+
 def test_text_cancel_clears_envelope(configured):
     client, factory = configured
     payload = text_payload(secret_id="c" * 48)
@@ -101,6 +124,55 @@ def test_text_cancel_clears_envelope(configured):
         assert row is not None
         assert row.ciphertext is None
         assert row.nonce is None
+
+
+def test_text_cancel_code_failed_attempts_are_rate_limited_per_source(configured):
+    client, _ = configured
+    secret_id = "f" * 48
+    created = client.post("/api/client-crypto/text", json=text_payload(secret_id=secret_id)).json()
+    wrong_code = "AAAAA" if created["cancel_code"] != "AAAAA" else "BBBBB"
+
+    for _ in range(3):
+        wrong = client.post(
+            f"/api/client-crypto/text/{secret_id}/cancel",
+            json={"cancel_code": wrong_code},
+        )
+        assert wrong.status_code == 410
+
+    blocked = client.post(
+        f"/api/client-crypto/text/{secret_id}/cancel",
+        json={"cancel_code": created["cancel_code"]},
+    )
+    assert blocked.status_code == 429
+    assert int(blocked.headers["Retry-After"]) >= 1
+
+
+def test_text_cancel_code_global_bucket_blocks_even_before_source_limit(configured):
+    client, _ = configured
+    secret_id = "9" * 48
+    created = client.post("/api/client-crypto/text", json=text_payload(secret_id=secret_id)).json()
+    wrong_code = "CCCCC" if created["cancel_code"] != "CCCCC" else "DDDDD"
+
+    for _ in range(2):
+        wrong = client.post(
+            f"/api/client-crypto/text/{secret_id}/cancel",
+            json={"cancel_code": wrong_code},
+        )
+        assert wrong.status_code == 410
+
+    limiter = client.app.state.rate_limiter
+    for _ in range(3):
+        assert limiter.consume(
+            scope=f"client-text-cancel-code-global:{secret_id}",
+            source="all-sources",
+            policy=FAILED_CANCEL_CODE_GLOBAL_LIMIT,
+        ) is None
+
+    blocked = client.post(
+        f"/api/client-crypto/text/{secret_id}/cancel",
+        json={"cancel_code": created["cancel_code"]},
+    )
+    assert blocked.status_code == 429
 
 
 def test_text_rejects_bad_nonce(configured):
